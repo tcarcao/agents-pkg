@@ -1,21 +1,16 @@
 /**
  * Paths for Cursor and Claude (project and global).
- * Subagents = ~/.cursor/subagents (global; marketplace plugins install here).
+ * Agents (subagents) = .cursor/agents (global; marketplace plugins install here).
  * Commands = .cursor/commands, .claude/commands.
  */
 
 import { join } from 'path';
 import { homedir } from 'os';
 
+/** Cursor only: path to .cursor/agents (global = ~/.cursor/agents) */
 export function getCursorAgentsDir(global: boolean, cwd?: string): string {
   const base = global ? homedir() : (cwd || process.cwd());
   return join(base, '.cursor', 'agents');
-}
-
-/** Cursor only: path to .cursor/subagents (global = ~/.cursor/subagents) */
-export function getCursorSubagentsDir(global: boolean, cwd?: string): string {
-  const base = global ? homedir() : (cwd || process.cwd());
-  return join(base, '.cursor', 'subagents');
 }
 
 export function getClaudeAgentsDir(global: boolean, cwd?: string): string {

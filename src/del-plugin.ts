@@ -4,7 +4,7 @@
  */
 
 import { rm } from 'fs/promises';
-import { getCursorSubagentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
+import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
 import { getPluginStorePath } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
 import { readLock, writeLock } from './lib/lock.js';
@@ -29,12 +29,12 @@ export async function runDelPlugin(args: string[]): Promise<void> {
   const pluginStorePath = getPluginStorePath(marketplaceName, pluginName);
   const cwd = process.cwd();
   const global = entry.global !== false;
-  const cursorSubagentsDir = getCursorSubagentsDir(global, cwd);
+  const cursorAgentsDir = getCursorAgentsDir(global, cwd);
   const cursorCommandsDir = getCursorCommandsDir(global, cwd);
   const cursorSkillsDir = getCursorSkillsDir(global, cwd);
   const cursorRulesDir = getCursorRulesDir(global, cwd);
 
-  await removeSymlinksInDirPointingUnder(cursorSubagentsDir, pluginStorePath);
+  await removeSymlinksInDirPointingUnder(cursorAgentsDir, pluginStorePath);
   await removeSymlinksInDirPointingUnder(cursorCommandsDir, pluginStorePath);
   await removeSymlinksInDirPointingUnder(cursorSkillsDir, pluginStorePath);
   await removeSymlinksInDirPointingUnder(cursorRulesDir, pluginStorePath);

@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents working on the `agents-pkg` CLI 
 
 ## Project Overview
 
-`agents-pkg` is a **Cursor-only** marketplace installer. It installs plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/` and **symlinked** into `.cursor/subagents`, `.cursor/commands`, `~/.cursor/skills`, `.cursor/rules`; hooks are merged into `.cursor/hooks.json`. Use `agents-pkg update` to re-fetch each installed marketplace and reinstall when the manifest version changed.
+`agents-pkg` is a **Cursor-only** marketplace installer. It installs plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/` and **symlinked** into `.cursor/agents`, `.cursor/commands`, `~/.cursor/skills`, `.cursor/rules`; hooks are merged into `.cursor/hooks.json`. Use `agents-pkg update` to re-fetch each installed marketplace and reinstall when the manifest version changed.
 
 ## Commands
 
@@ -65,7 +65,7 @@ src/
 ## Store and symlinks
 
 - **Store:** `~/.agents/agents-pkg/marketplace/<marketplace-name>/<plugin-name>/` — copied from source (e.g. `./global`).
-- **Symlinks:** Each plugin’s `agents/*.md`, `commands/*.md`, `skills/<dir>/`, and `rules/*.md` / `rules/*.mdc` are symlinked into project `.cursor/subagents`, project `.cursor/commands`, global `~/.cursor/skills`, and project `.cursor/rules`. Hooks from `hooks/hooks.json` are **merged** into project `.cursor/hooks.json` (no symlink).
+- **Symlinks:** Each plugin’s `agents/*.md`, `commands/*.md`, `skills/<dir>/`, and `rules/*.md` / `rules/*.mdc` are symlinked into project `.cursor/agents`, project `.cursor/commands`, global `~/.cursor/skills`, and project `.cursor/rules`. Hooks from `hooks/hooks.json` are **merged** into project `.cursor/hooks.json` (no symlink).
 - **Sources:** Local paths and GitLab/GitHub (full URL or shorthand). No API dependency for update—clone and read file.
 
 ## Lock file (v1)
@@ -80,7 +80,7 @@ src/
 | add-plugin | `src/add-plugin.ts`: resolveSourceToDir → readMarketplaceManifest(dir) → copy plugin dirs to store → createSymlink for agents/commands/skills/rules, mergeHooksIntoProject for hooks → writeLock |
 | list | `src/list.ts`: readLock, print each marketplace (name, version, scope, source, plugin names) |
 | del-plugin | `src/del-plugin.ts`: remove one plugin’s symlinks and store (getPluginStorePath); update lock pluginNames; remove marketplace entry if last plugin |
-| del-marketplace | `src/del-marketplace.ts`: removeSymlinksInDirPointingUnder for subagents/commands/skills/rules; rm store; update lock |
+| del-marketplace | `src/del-marketplace.ts`: removeSymlinksInDirPointingUnder for agents/commands/skills/rules; rm store; update lock |
 | update | `src/update.ts`: for each lock.marketplaces, resolve source to dir, readMarketplaceManifest(dir), if version changed then remove symlinks, rm store, installMarketplaceFromDir, writeLock |
 | Source resolution | `lib/source-dir.ts`: resolveSourceToDir (local path, git URL, owner/repo, gitlab.com/owner/repo) |
 

@@ -18,7 +18,7 @@ import {
   REPO_HOOKS_FILE,
   REPO_RULES_DIR,
 } from './lib/constants.js';
-import { getCursorSubagentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
+import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
 import { createSymlink } from './lib/symlink.js';
 import { mergeHooksIntoProject } from './lib/hooks.js';
 import type { HooksJson } from './lib/hooks.js';
@@ -82,7 +82,7 @@ async function listRuleFiles(rulesDir: string): Promise<string[]> {
  */
 async function installPlugin(
   pluginStorePath: string,
-  cursorSubagentsDir: string,
+  cursorAgentsDir: string,
   cursorCommandsDir: string,
   cursorSkillsDir: string,
   cursorRulesDir: string,
@@ -94,7 +94,7 @@ async function installPlugin(
   const agentNames = await listMdFiles(agentsDir);
   for (const name of agentNames) {
     const target = join(agentsDir, name + '.md');
-    const linkPath = join(cursorSubagentsDir, name + '.md');
+    const linkPath = join(cursorAgentsDir, name + '.md');
     await createSymlink(target, linkPath);
   }
   if (agentNames.length > 0) done.push('agents');
@@ -161,7 +161,7 @@ export async function installMarketplaceFromDir(
   const global = options.global !== false;
   const absSourceDir = resolve(sourceDir);
   const cwd = process.cwd();
-  const cursorSubagentsDir = getCursorSubagentsDir(global, cwd);
+  const cursorAgentsDir = getCursorAgentsDir(global, cwd);
   const cursorCommandsDir = getCursorCommandsDir(global, cwd);
   const cursorSkillsDir = getCursorSkillsDir(global, cwd);
   const cursorRulesDir = getCursorRulesDir(global, cwd);
@@ -180,7 +180,7 @@ export async function installMarketplaceFromDir(
 
     const done = await installPlugin(
       storePath,
-      cursorSubagentsDir,
+      cursorAgentsDir,
       cursorCommandsDir,
       cursorSkillsDir,
       cursorRulesDir,

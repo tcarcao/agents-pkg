@@ -6,7 +6,7 @@ import { rm } from 'fs/promises';
 import { resolveSourceToDir } from './lib/source-dir.js';
 import { readMarketplaceManifest, getMarketplaceStorePath } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
-import { getCursorSubagentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
+import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
 import { installMarketplaceFromDir } from './add-plugin.js';
 import { readLock, writeLock } from './lib/lock.js';
 
@@ -22,7 +22,7 @@ export async function runUpdate(): Promise<void> {
     if (!entry || typeof entry.source !== 'string') continue;
 
     const global = entry.global !== false;
-    const cursorSubagentsDir = getCursorSubagentsDir(global, cwd);
+    const cursorAgentsDir = getCursorAgentsDir(global, cwd);
     const cursorCommandsDir = getCursorCommandsDir(global, cwd);
     const cursorSkillsDir = getCursorSkillsDir(global, cwd);
     const cursorRulesDir = getCursorRulesDir(global, cwd);
@@ -40,7 +40,7 @@ export async function runUpdate(): Promise<void> {
 
       console.log(`Updating marketplace ${name} (${entry.version} -> ${newVersion})...`);
       const storeRoot = getMarketplaceStorePath(name);
-      await removeSymlinksInDirPointingUnder(cursorSubagentsDir, storeRoot);
+      await removeSymlinksInDirPointingUnder(cursorAgentsDir, storeRoot);
       await removeSymlinksInDirPointingUnder(cursorCommandsDir, storeRoot);
       await removeSymlinksInDirPointingUnder(cursorSkillsDir, storeRoot);
       await removeSymlinksInDirPointingUnder(cursorRulesDir, storeRoot);

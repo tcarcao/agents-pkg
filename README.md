@@ -1,8 +1,8 @@
 # agents-pkg
 
-**Cursor-only** marketplace installer. Install plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to a store and **symlinked** into Cursor’s config dirs (subagents, commands, skills, rules); hooks are merged into `.cursor/hooks.json`.
+**Cursor-only** marketplace installer. Install plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to a store and **symlinked** into Cursor’s config dirs (agents, commands, skills, rules); hooks are merged into `.cursor/hooks.json`.
 
-- **Subagents** — Agent `.md` files in `.cursor/subagents` (global or project).
+- **Agents** — Agent `.md` files in `.cursor/agents` (global or project).
 - **Commands** — Slash commands in `.cursor/commands`.
 - **Skills** — Skill dirs (each with `SKILL.md`) in `.cursor/skills`.
 - **Rules** — Rule `.md`/`.mdc` files in `.cursor/rules`.
@@ -47,7 +47,7 @@ agents-pkg add-plugin <source> [plugin-name] [--global | --project]
 
 - **source** — Repo URL (GitHub `owner/repo`, GitLab, or full URL) or local path.
 - **plugin-name** — Optional. Install only this plugin from the marketplace; otherwise all plugins are installed.
-- **--global** (default) — Symlink into `~/.cursor/subagents`, `~/.cursor/commands`, `~/.cursor/skills`, `~/.cursor/rules`. Available in all projects.
+- **--global** (default) — Symlink into `~/.cursor/agents`, `~/.cursor/commands`, `~/.cursor/skills`, `~/.cursor/rules`. Available in all projects.
 - **--project** — Symlink into the current project’s `.cursor/` so only this project sees the plugin.
 
 Examples:
@@ -119,7 +119,7 @@ Inside each plugin directory (e.g. `./global`), use this layout:
 
 | Category | Dir / file | Contents |
 |----------|------------|----------|
-| Subagents | `agents/` | One `.md` file per agent; filename (without `.md`) is the name. |
+| Agents | `agents/` | One `.md` file per agent; filename (without `.md`) is the name. |
 | Commands | `commands/` | One `.md` file per command. |
 | Skills | `skills/` | One subdir per skill; each must contain `SKILL.md`. |
 | Rules | `rules/` | Top-level `.md` or `.mdc` rule files. |
@@ -135,7 +135,7 @@ With **--global** (default):
 
 | Kind | Location |
 |------|----------|
-| Subagents | `~/.cursor/subagents/` |
+| Agents | `~/.cursor/agents/` |
 | Commands | `~/.cursor/commands/` |
 | Skills | `~/.cursor/skills/` |
 | Rules | `~/.cursor/rules/` |
@@ -145,7 +145,7 @@ With **--project**:
 
 | Kind | Location |
 |------|----------|
-| Subagents | `<project>/.cursor/subagents/` |
+| Agents | `<project>/.cursor/agents/` |
 | Commands | `<project>/.cursor/commands/` |
 | Skills | `<project>/.cursor/skills/` |
 | Rules | `<project>/.cursor/rules/` |
