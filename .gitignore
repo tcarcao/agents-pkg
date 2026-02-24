@@ -1,0 +1,23 @@
+node_modules/
+.DS_Store
+
+# output
+out
+dist
+*.tgz
+
+*.log
+package-lock.json
+.codebuddy/
+.agent/
+.agents/
+.claude/
+.cursor/
+.gemini/
+.github/skills/
+.opencode/
+.qoder/
+.qwen/
+.trae/
+.vscode/
+.pnpm-store/
