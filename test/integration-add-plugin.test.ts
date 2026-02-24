@@ -69,6 +69,56 @@ describe('integration add-plugin', () => {
     }
   });
 
+  it('with multiple plugin names installs only those plugins', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepo();
+    try {
+      const add = runWithEnv(
+        ['add-plugin', repoDir, 'plugin-a', 'plugin-b', '--project'],
+        projectDir,
+        homeDir
+      );
+      expect(add.exitCode).toBe(0);
+      expect(add.stdout).toContain('Installed marketplace "test-marketplace"');
+      expect(add.stdout).toContain('plugin-a');
+      expect(add.stdout).toContain('plugin-b');
+
+      const list = listOutput(projectDir, homeDir);
+      expect(list).toContain('test-marketplace');
+      expect(list).toContain('plugin-a');
+      expect(list).toContain('plugin-b');
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('with multiple plugin names when one is invalid fails', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepo();
+    try {
+      const add = runWithEnv(
+        ['add-plugin', repoDir, 'plugin-a', 'nonexistent-plugin', '--project'],
+        projectDir,
+        homeDir
+      );
+      expect(add.exitCode).toBe(1);
+      const out = add.stdout + add.stderr;
+      expect(out).toMatch(/not found|Plugin\(s\) not found/i);
+      expect(out).toContain('nonexistent-plugin');
+      expect(out).toContain('Available:');
+      expect(out).toContain('plugin-a');
+      expect(out).toContain('plugin-b');
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
   it('with invalid source fails', async () => {
     const homeDir = await createTempDir('agents-pkg-int-home-');
     const projectDir = await createTempDir('agents-pkg-int-project-');

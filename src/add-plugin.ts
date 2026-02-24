@@ -143,13 +143,18 @@ async function installPlugin(
 export async function installMarketplaceFromDir(
   manifest: MarketplaceManifest,
   sourceDir: string,
-  options: { pluginNameFilter?: string; global?: boolean } = {}
+  options: { pluginNames?: string[]; global?: boolean } = {}
 ): Promise<string[]> {
   let pluginsToInstall = manifest.plugins;
-  if (options.pluginNameFilter) {
-    pluginsToInstall = manifest.plugins.filter((p) => p.name === options.pluginNameFilter);
-    if (pluginsToInstall.length === 0) {
-      fatal(`Plugin "${options.pluginNameFilter}" not found in marketplace. Available: ${manifest.plugins.map((p) => p.name).join(', ')}`);
+  if (options.pluginNames && options.pluginNames.length > 0) {
+    const requested = new Set(options.pluginNames);
+    pluginsToInstall = manifest.plugins.filter((p) => requested.has(p.name));
+    const found = new Set(pluginsToInstall.map((p) => p.name));
+    const missing = options.pluginNames.filter((n) => !found.has(n));
+    if (missing.length > 0) {
+      fatal(
+        `Plugin(s) not found in marketplace: ${missing.join(', ')}. Available: ${manifest.plugins.map((p) => p.name).join(', ')}`
+      );
     }
   }
 
@@ -186,7 +191,7 @@ export async function installMarketplaceFromDir(
   return installed;
 }
 
-function parseAddPluginArgs(args: string[]): { source: string; pluginNameFilter?: string; global: boolean } {
+function parseAddPluginArgs(args: string[]): { source: string; pluginNames?: string[]; global: boolean } {
   let global = true;
   const positionals: string[] = [];
   for (const arg of args) {
@@ -200,15 +205,18 @@ function parseAddPluginArgs(args: string[]): { source: string; pluginNameFilter?
       positionals.push(arg.trim());
     }
   }
-  const source = positionals[0];
-  const pluginNameFilter = positionals[1]?.trim() || undefined;
-  return { source: source ?? '', pluginNameFilter, global };
+  const source = positionals[0] ?? '';
+  const pluginNames =
+    positionals.length > 1 ? positionals.slice(1).filter((s) => s.length > 0) : undefined;
+  return { source, pluginNames, global };
 }
 
 export async function runAddPlugin(args: string[]): Promise<void> {
-  const { source, pluginNameFilter, global } = parseAddPluginArgs(args);
+  const { source, pluginNames, global } = parseAddPluginArgs(args);
   if (!source) {
-    fatal('Usage: agents-pkg add-plugin <source> [plugin-name] [--global | --project]\n  source = repo URL or local path; optional plugin-name = install only that plugin.\n  --global (default) = symlinks in ~/.cursor/*; --project = symlinks in project .cursor/*.');
+    fatal(
+      'Usage: agents-pkg add-plugin <source> [plugin-name...] [--global | --project]\n  source = repo URL or local path; optional plugin names = install only those plugins (default: all).\n  --global (default) = symlinks in ~/.cursor/*; --project = symlinks in project .cursor/*.'
+    );
   }
 
   const { path: sourceDir, cleanup } = await resolveSourceToDir(source).catch((e) => {
@@ -219,7 +227,7 @@ export async function runAddPlugin(args: string[]): Promise<void> {
     const manifest = await readMarketplaceManifest(sourceDir);
     const version = manifest.metadata?.version ?? '0.0.0';
     const installed = await installMarketplaceFromDir(manifest, sourceDir, {
-      pluginNameFilter,
+      pluginNames,
       global,
     });
 

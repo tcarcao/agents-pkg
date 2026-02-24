@@ -11,7 +11,7 @@ This file provides guidance to AI coding agents working on the `agents-pkg` CLI 
 | Command | Description |
 | ------- | ----------- |
 | `agents-pkg` | Show banner with available commands |
-| `agents-pkg add-plugin <source> [plugin-name]` | Install marketplace from source (reads `.cursor-plugin/marketplace.json` inside source); all plugins or one by name |
+| `agents-pkg add-plugin <source> [plugin-name...]` | Install marketplace from source (reads `.cursor-plugin/marketplace.json` inside source); all plugins or one or more by name |
 | `agents-pkg list` | List installed marketplaces and their plugins (name, version, scope, source, plugin names) |
 | `agents-pkg del-plugin <marketplace> <plugin>` | Remove one plugin from a marketplace (remove its agent copies and symlinks, delete its store dir, update lock; remove marketplace entry if last plugin) |
 | `agents-pkg del-marketplace <name>` | Uninstall entire marketplace by name (remove agent copies and symlinks, delete store, update lock) |

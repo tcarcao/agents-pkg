@@ -33,7 +33,7 @@ function showBanner(): void {
   console.log('Usage: agents-pkg <command> [options]');
   console.log('');
   console.log('Commands:');
-  console.log('  add-plugin <source> [plugin-name]   Install marketplace (--global default, --project for current project only)');
+  console.log('  add-plugin <source> [plugin-name...]   Install marketplace, optionally only named plugins (--global default, --project for current project only)');
   console.log('  list                                List installed marketplaces and their plugins');
   console.log('  del-plugin <marketplace> <plugin>   Remove one plugin from a marketplace');
   console.log('  del-marketplace <name>              Uninstall entire marketplace');
@@ -41,6 +41,7 @@ function showBanner(): void {
   console.log('');
   console.log('Examples:');
   console.log('  agents-pkg add-plugin https://gitlab.com/org/ai-kit');
+  console.log('  agents-pkg add-plugin https://gitlab.com/org/ai-kit plugin-a plugin-b');
   console.log('  agents-pkg add-plugin ./local-repo --project');
   console.log('  agents-pkg list');
   console.log('  agents-pkg del-plugin ai-engineering-kit ai-kit-backend');
