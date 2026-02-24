@@ -2,7 +2,7 @@
 
 /**
  * agents-pkg — Cursor-only marketplace installer.
- * Commands: add-plugin <source> [plugin-name], del-plugin <name>, update.
+ * Commands: add-plugin, list, del-plugin (remove one plugin), del-marketplace (remove marketplace), update.
  */
 
 import { join, dirname } from 'path';
@@ -10,7 +10,9 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { fatal } from './lib/errors.js';
 import { runAddPlugin } from './add-plugin.js';
+import { runList } from './list.js';
 import { runDelPlugin } from './del-plugin.js';
+import { runDelMarketplace } from './del-marketplace.js';
 import { runUpdate } from './update.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -31,14 +33,18 @@ function showBanner(): void {
   console.log('Usage: agents-pkg <command> [options]');
   console.log('');
   console.log('Commands:');
-  console.log('  add-plugin <source> [plugin-name]   Install marketplace from source (read .cursor-plugin/marketplace.json inside source); all plugins or one by name');
-  console.log('  del-plugin <name>                  Uninstall marketplace by name');
-  console.log('  update                             Re-fetch each installed marketplace and reinstall if version changed');
+  console.log('  add-plugin <source> [plugin-name]   Install marketplace (--global default, --project for current project only)');
+  console.log('  list                                List installed marketplaces and their plugins');
+  console.log('  del-plugin <marketplace> <plugin>   Remove one plugin from a marketplace');
+  console.log('  del-marketplace <name>              Uninstall entire marketplace');
+  console.log('  update                              Re-fetch each installed marketplace and reinstall if version changed');
   console.log('');
   console.log('Examples:');
   console.log('  agents-pkg add-plugin https://gitlab.com/org/ai-kit');
-  console.log('  agents-pkg add-plugin ./local-repo ai-engineering-kit-backend');
-  console.log('  agents-pkg del-plugin ai-engineering-kit');
+  console.log('  agents-pkg add-plugin ./local-repo --project');
+  console.log('  agents-pkg list');
+  console.log('  agents-pkg del-plugin ai-engineering-kit ai-kit-backend');
+  console.log('  agents-pkg del-marketplace ai-engineering-kit');
   console.log('  agents-pkg update');
 }
 
@@ -58,8 +64,16 @@ async function main(): Promise<void> {
       await runAddPlugin(rest);
       break;
 
+    case 'list':
+      await runList();
+      break;
+
     case 'del-plugin':
       await runDelPlugin(rest);
+      break;
+
+    case 'del-marketplace':
+      await runDelMarketplace(rest);
       break;
 
     case 'update':

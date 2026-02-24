@@ -6,7 +6,7 @@ import { rm } from 'fs/promises';
 import { resolveSourceToDir } from './lib/source-dir.js';
 import { readMarketplaceManifest, getMarketplaceStorePath } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
-import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir } from './lib/paths.js';
+import { getCursorSubagentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
 import { installMarketplaceFromDir } from './add-plugin.js';
 import { readLock, writeLock } from './lib/lock.js';
 
@@ -16,13 +16,16 @@ export async function runUpdate(): Promise<void> {
   if (entries.length === 0) return;
 
   const cwd = process.cwd();
-  const cursorAgentsDir = getCursorAgentsDir(false, cwd);
-  const cursorCommandsDir = getCursorCommandsDir(false, cwd);
-  const cursorSkillsDir = getCursorSkillsDir(true, cwd);
 
   let updated = 0;
   for (const [name, entry] of entries) {
     if (!entry || typeof entry.source !== 'string') continue;
+
+    const global = entry.global !== false;
+    const cursorSubagentsDir = getCursorSubagentsDir(global, cwd);
+    const cursorCommandsDir = getCursorCommandsDir(global, cwd);
+    const cursorSkillsDir = getCursorSkillsDir(global, cwd);
+    const cursorRulesDir = getCursorRulesDir(global, cwd);
 
     const { path: sourceDir, cleanup } = await resolveSourceToDir(entry.source).catch(() => ({
       path: '',
@@ -37,12 +40,13 @@ export async function runUpdate(): Promise<void> {
 
       console.log(`Updating marketplace ${name} (${entry.version} -> ${newVersion})...`);
       const storeRoot = getMarketplaceStorePath(name);
-      await removeSymlinksInDirPointingUnder(cursorAgentsDir, storeRoot);
+      await removeSymlinksInDirPointingUnder(cursorSubagentsDir, storeRoot);
       await removeSymlinksInDirPointingUnder(cursorCommandsDir, storeRoot);
       await removeSymlinksInDirPointingUnder(cursorSkillsDir, storeRoot);
+      await removeSymlinksInDirPointingUnder(cursorRulesDir, storeRoot);
       await rm(storeRoot, { recursive: true, force: true }).catch(() => {});
 
-      const installed = await installMarketplaceFromDir(manifest, sourceDir);
+      const installed = await installMarketplaceFromDir(manifest, sourceDir, { global });
       entry.version = newVersion;
       entry.pluginNames = installed;
       entry.updatedAt = new Date().toISOString();

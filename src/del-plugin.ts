@@ -1,43 +1,54 @@
 /**
- * del-plugin — Uninstall a marketplace by name (remove symlinks, delete store, update lock).
+ * del-plugin — Remove a single plugin from an installed marketplace.
+ * Removes that plugin's symlinks and store dir; updates lock. If the last plugin is removed, the marketplace entry is removed.
  */
 
 import { rm } from 'fs/promises';
-import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir } from './lib/paths.js';
-import { getMarketplaceStorePath } from './lib/marketplace.js';
+import { getCursorSubagentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
+import { getPluginStorePath } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
 import { readLock, writeLock } from './lib/lock.js';
 import { fatal } from './lib/errors.js';
 
 export async function runDelPlugin(args: string[]): Promise<void> {
-  const name = args[0]?.trim();
-  if (!name) {
-    fatal('Usage: agents-pkg del-plugin <name>\n  name = marketplace name (e.g. ai-engineering-kit).');
+  const marketplaceName = args[0]?.trim();
+  const pluginName = args[1]?.trim();
+  if (!marketplaceName || !pluginName) {
+    fatal('Usage: agents-pkg del-plugin <marketplace-name> <plugin-name>\n  Removes one plugin from an installed marketplace. Use "agents-pkg list" to see names.');
   }
 
   const lock = await readLock();
-  const entry = lock.marketplaces[name];
+  const entry = lock.marketplaces[marketplaceName];
   if (!entry) {
-    fatal(`Marketplace "${name}" is not installed.`);
+    fatal(`Marketplace "${marketplaceName}" is not installed.`);
+  }
+  if (!entry.pluginNames?.includes(pluginName)) {
+    fatal(`Plugin "${pluginName}" is not installed from marketplace "${marketplaceName}". Installed: ${entry.pluginNames?.join(', ') ?? '(none)'}.`);
   }
 
-  const storeRoot = getMarketplaceStorePath(name);
+  const pluginStorePath = getPluginStorePath(marketplaceName, pluginName);
   const cwd = process.cwd();
-  const cursorAgentsDir = getCursorAgentsDir(false, cwd);
-  const cursorCommandsDir = getCursorCommandsDir(false, cwd);
-  const cursorSkillsDir = getCursorSkillsDir(true, cwd);
+  const global = entry.global !== false;
+  const cursorSubagentsDir = getCursorSubagentsDir(global, cwd);
+  const cursorCommandsDir = getCursorCommandsDir(global, cwd);
+  const cursorSkillsDir = getCursorSkillsDir(global, cwd);
+  const cursorRulesDir = getCursorRulesDir(global, cwd);
 
-  await removeSymlinksInDirPointingUnder(cursorAgentsDir, storeRoot);
-  await removeSymlinksInDirPointingUnder(cursorCommandsDir, storeRoot);
-  await removeSymlinksInDirPointingUnder(cursorSkillsDir, storeRoot);
+  await removeSymlinksInDirPointingUnder(cursorSubagentsDir, pluginStorePath);
+  await removeSymlinksInDirPointingUnder(cursorCommandsDir, pluginStorePath);
+  await removeSymlinksInDirPointingUnder(cursorSkillsDir, pluginStorePath);
+  await removeSymlinksInDirPointingUnder(cursorRulesDir, pluginStorePath);
 
   try {
-    await rm(storeRoot, { recursive: true, force: true });
+    await rm(pluginStorePath, { recursive: true, force: true });
   } catch (e) {
-    console.warn(`Could not remove store at ${storeRoot}:`, e instanceof Error ? e.message : String(e));
+    console.warn(`Could not remove store at ${pluginStorePath}:`, e instanceof Error ? e.message : String(e));
   }
 
-  delete lock.marketplaces[name];
+  entry.pluginNames = entry.pluginNames.filter((n) => n !== pluginName);
+  if (entry.pluginNames.length === 0) {
+    delete lock.marketplaces[marketplaceName];
+  }
   await writeLock(lock);
-  console.log(`Removed marketplace "${name}".`);
+  console.log(`Removed plugin "${pluginName}" from marketplace "${marketplaceName}".`);
 }

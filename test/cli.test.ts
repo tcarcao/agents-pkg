@@ -5,9 +5,10 @@
 
 import { describe, it } from 'vitest';
 import { readFileSync } from 'fs';
+import { rm } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { runCli, runCliOutput, ROOT } from './helpers.js';
+import { runCli, runCliOutput, ROOT, createTempDir } from './helpers.js';
 import { expect } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -15,13 +16,16 @@ const PACKAGE_ROOT = join(__dirname, '..');
 
 describe('agents-pkg CLI', () => {
   describe('--help', () => {
-    it('displays usage with add-plugin, del-plugin, update', () => {
+    it('displays usage with add-plugin, list, del-plugin, del-marketplace, update', () => {
       const output = runCliOutput(['--help'], ROOT);
       expect(output).toContain('Usage: agents-pkg <command>');
       expect(output).toContain('add-plugin');
+      expect(output).toContain('list');
       expect(output).toContain('del-plugin');
+      expect(output).toContain('del-marketplace');
       expect(output).toContain('update');
-      expect(output).toContain('.cursor-plugin/marketplace.json');
+      expect(output).toContain('--global');
+      expect(output).toContain('--project');
     });
 
     it('same output for -h', () => {
@@ -45,11 +49,13 @@ describe('agents-pkg CLI', () => {
   });
 
   describe('no arguments', () => {
-    it('displays banner with add-plugin and update', () => {
+    it('displays banner with add-plugin, list, del-plugin, del-marketplace, update', () => {
       const output = runCliOutput([], ROOT);
       expect(output).toContain('agents-pkg');
       expect(output).toContain('add-plugin');
+      expect(output).toContain('list');
       expect(output).toContain('del-plugin');
+      expect(output).toContain('del-marketplace');
       expect(output).toContain('update');
     });
   });
@@ -74,7 +80,28 @@ describe('agents-pkg CLI', () => {
     it('with no args exits non-zero and prints usage', () => {
       const result = runCli(['del-plugin'], ROOT);
       expect(result.exitCode).toBe(1);
-      expect(result.stdout + result.stderr).toContain('Usage: agents-pkg del-plugin <name>');
+      expect(result.stdout + result.stderr).toContain('Usage: agents-pkg del-plugin <marketplace-name> <plugin-name>');
+    });
+  });
+
+  describe('del-marketplace', () => {
+    it('with no args exits non-zero and prints usage', () => {
+      const result = runCli(['del-marketplace'], ROOT);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout + result.stderr).toContain('Usage: agents-pkg del-marketplace <name>');
+    });
+  });
+
+  describe('list', () => {
+    it('runs without error and shows no marketplaces when empty', async () => {
+      const dir = await createTempDir('agents-pkg-list-');
+      try {
+        const result = runCli(['list'], ROOT, { AGENTS_PKG_HOME: dir });
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('No marketplaces installed');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
     });
   });
 

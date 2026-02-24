@@ -21,9 +21,28 @@ function isLocalPath(input: string): boolean {
   );
 }
 
+/**
+ * SSH-style URL without git@ prefix: host:path (e.g. git.naspersclassifieds.com:olxeu/ecosystem/tooling/ai-engineering-kit.git).
+ * Single colon, host-like left part, path-like right part.
+ */
+function isSshStyleUrl(input: string): boolean {
+  const colonIdx = input.indexOf(':');
+  if (colonIdx <= 0 || colonIdx !== input.lastIndexOf(':')) return false;
+  const host = input.slice(0, colonIdx);
+  const path = input.slice(colonIdx + 1);
+  const hostLooksValid = host.includes('.') || host === 'github' || host === 'gitlab';
+  const pathLooksValid = path.length > 0 && (path.includes('/') || path.endsWith('.git'));
+  return hostLooksValid && pathLooksValid;
+}
+
 function isGitUrl(input: string): boolean {
   const t = input.trim();
-  return t.startsWith('http://') || t.startsWith('https://') || t.startsWith('git@');
+  return (
+    t.startsWith('http://') ||
+    t.startsWith('https://') ||
+    t.startsWith('git@') ||
+    isSshStyleUrl(t)
+  );
 }
 
 /**

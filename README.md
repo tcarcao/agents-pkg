@@ -1,13 +1,14 @@
 # agents-pkg
 
-A wrapper around the [skills](https://github.com/vercel-labs/skills) CLI for **Cursor** and **Claude Code**. It keeps the same config location (`~/.agents/`) and folder layout each app expects, and adds **subagents** and **commands** management for both.
+**Cursor-only** marketplace installer. Install plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to a store and **symlinked** into Cursor’s config dirs (subagents, commands, skills, rules); hooks are merged into `.cursor/hooks.json`.
 
-- **Skills** — Pass-through to `npx skills` (e.g. `agents-pkg skills add owner/repo`) with `--agent cursor claude-code` by default.
-- **Subagents** — Agent definition files (`.md`) in `.cursor/agents` and `.claude/agents`.
-- **Commands** — Slash commands in `.cursor/commands` and `.claude/commands`.
-- **Hooks** — Cursor only: `.cursor/hooks.json` (Claude uses a different hooks setup and is not managed here).
+- **Subagents** — Agent `.md` files in `.cursor/subagents` (global or project).
+- **Commands** — Slash commands in `.cursor/commands`.
+- **Skills** — Skill dirs (each with `SKILL.md`) in `.cursor/skills`.
+- **Rules** — Rule `.md`/`.mdc` files in `.cursor/rules`.
+- **Hooks** — Cursor lifecycle hooks merged into project `.cursor/hooks.json`.
 
-**Note:** `--agent` (cursor, claude-code) is which *app* to install skills to. Subagents are the `.md` agent files in those apps’ agent dirs — a different concept.
+By default, symlinks are **global** (`~/.cursor/*`). Use `--project` to install into the current project’s `.cursor/` instead.
 
 ---
 
@@ -29,8 +30,8 @@ npx agents-pkg --help
 
 | Item | Location |
 |------|----------|
-| Lock file | `~/.agents/.agents-pkg-lock.json` (same parent as skills’ `.skill-lock.json`) |
-| Schema | `{ "version": 1, "agents": { ... }, "sources": { "owner/repo": { "source", "repoHash", "options", "updatedAt" } } }` |
+| Lock file | `~/.agents/.agents-pkg-lock.json` |
+| Store | `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/` |
 
 Override home for tests: set `AGENTS_PKG_HOME` to a temp directory.
 
@@ -38,138 +39,136 @@ Override home for tests: set `AGENTS_PKG_HOME` to a temp directory.
 
 ## Usage
 
-### Install from a repo (all at once)
-
-Pass a **source** (GitHub `owner/repo`, git URL, or local path). By default this installs **skills**, **subagents**, **commands**, and **hooks** (Cursor only) from that repo. Use flags to install only what you want:
+### Add a marketplace
 
 ```bash
-agents-pkg owner/repo                         # install skills + subagents + commands + hooks
-agents-pkg owner/repo --subagents --hooks     # only subagents and hooks
-agents-pkg ./my-local-repo --skills           # only skills from local path
+agents-pkg add-plugin <source> [plugin-name] [--global | --project]
 ```
 
-The repo is expected to follow the [repo layout convention](#repo-layout-convention-for-install-from-source) below.
+- **source** — Repo URL (GitHub `owner/repo`, GitLab, or full URL) or local path.
+- **plugin-name** — Optional. Install only this plugin from the marketplace; otherwise all plugins are installed.
+- **--global** (default) — Symlink into `~/.cursor/subagents`, `~/.cursor/commands`, `~/.cursor/skills`, `~/.cursor/rules`. Available in all projects.
+- **--project** — Symlink into the current project’s `.cursor/` so only this project sees the plugin.
 
-### Skills (pass-through to `npx skills`)
-
-Under the `skills` command, all of these are forwarded to `npx skills` with **`--agent cursor claude-code`** unless you pass `--agent` yourself.
+Examples:
 
 ```bash
-agents-pkg skills add vercel-labs/agent-skills
-agents-pkg skills remove <skill>
-agents-pkg skills list
-agents-pkg skills find
-agents-pkg skills check
-agents-pkg skills update
-agents-pkg skills init [name]
-agents-pkg skills experimental_install
-agents-pkg skills experimental_sync
+agents-pkg add-plugin https://github.com/org/ai-kit
+agents-pkg add-plugin ./local-repo --project
+agents-pkg add-plugin https://gitlab.com/org/kit my-plugin-name
 ```
 
-### Subagents (Cursor + Claude)
-
-Subagents are `.md` files in `.cursor/agents` and `.claude/agents`. **Source** can be: omitted (stub), a local path, an HTTP(S) URL, or GitHub `owner/repo/path/to/file.md`.
+### List installed marketplaces
 
 ```bash
-agents-pkg subagents list
-agents-pkg subagents add <name> [source]   # add -g for global dirs too
-agents-pkg subagents remove <name>
+agents-pkg list
 ```
 
-### Commands (slash commands)
+Shows each installed marketplace with its version, scope (global/project), source, and plugin names.
 
-Slash commands live in `.cursor/commands` and `.claude/commands`. Same **source** options as subagents.
+### Remove one plugin from a marketplace
 
 ```bash
-agents-pkg commands list
-agents-pkg commands add <name> [source]     # add -g for global dirs too
-agents-pkg commands remove <name>
+agents-pkg del-plugin <marketplace-name> <plugin-name>
 ```
 
-### Hooks (Cursor only)
+Removes that plugin’s symlinks and data; updates the lock. If it was the last plugin, the marketplace entry is removed. Use `agents-pkg list` to see marketplace and plugin names.
 
-Hooks run shell commands at lifecycle events in Cursor (`.cursor/hooks.json`). Claude uses a different setup and is not managed here. See [Cursor hooks](https://cursor.com/docs/agent/third-party-hooks) for event names (e.g. `beforeShellExecution`, `afterFileEdit`).
+### Remove an entire marketplace
 
 ```bash
-agents-pkg hooks list
-agents-pkg hooks add <hookName> <command>   # e.g. hooks add beforeShellExecution ./check.sh; add -g for global
-agents-pkg hooks remove <hookName>
+agents-pkg del-marketplace <name>
 ```
 
-### Update
+Uninstalls the marketplace and all its plugins. `name` is the marketplace name (e.g. from the manifest’s `name` field).
 
-`agents-pkg update` runs **skills update** (so all skills installed via `npx skills` are updated), then checks each **tracked GitHub source** (repos you installed from with `agents-pkg owner/repo`). For each repo, it fetches the current default-branch tree hash from the GitHub API; if the hash changed, it re-installs from that source (skills, subagents, commands, hooks per the options used when you first installed). Local-path installs are not tracked for update.
+### Update installed marketplaces
 
 ```bash
 agents-pkg update
 ```
 
-Tracking is stored in the lock file (`~/.agents/.agents-pkg-lock.json` under `sources`). Optional: set `GITHUB_TOKEN` or `GH_TOKEN` for higher API rate limits.
+Re-fetches each installed marketplace source, reads `.cursor-plugin/marketplace.json`, and reinstalls if the manifest `metadata.version` changed. Symlinks are recreated in the same place (global or project) as when the marketplace was first installed.
 
-### Agents and config
+---
 
-Custom install targets (in the lock file) and path info:
+## Marketplace format
 
-```bash
-agents-pkg agents list
-agents-pkg agents add <name> <projectDir> [globalDir]
-agents-pkg agents remove <name>
-agents-pkg config path
+The source must contain **`.cursor-plugin/marketplace.json`** at its root. Example:
+
+```json
+{
+  "name": "ai-engineering-kit",
+  "owner": { "name": "My Org" },
+  "metadata": {
+    "description": "Internal AI engineering kit.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    { "name": "ai-kit-global", "source": "./global", "description": "Shared skills, commands, agents, rules." },
+    { "name": "ai-kit-backend", "source": "./backend", "description": "Backend-specific." }
+  ]
+}
 ```
 
+- **name** — Marketplace id; used in the lock and as the store parent.
+- **metadata.version** — Used to decide when to reinstall on `agents-pkg update`.
+- **plugins** — Array of `{ name, source, description? }`. `source` is relative to the repo root (e.g. `./global`).
+
+Inside each plugin directory (e.g. `./global`), use this layout:
+
+| Category | Dir / file | Contents |
+|----------|------------|----------|
+| Subagents | `agents/` | One `.md` file per agent; filename (without `.md`) is the name. |
+| Commands | `commands/` | One `.md` file per command. |
+| Skills | `skills/` | One subdir per skill; each must contain `SKILL.md`. |
+| Rules | `rules/` | Top-level `.md` or `.mdc` rule files. |
+| Hooks | `hooks/hooks.json` | Cursor-style `{ "version": 1, "hooks": { ... } }`. Merged into project `.cursor/hooks.json` only. |
+
+Missing dirs are skipped. Hooks are always merged into the **project** `.cursor/hooks.json` (not global).
+
 ---
 
-## Repo layout convention (install from source)
+## Where things are installed
 
-When you run `agents-pkg owner/repo` (or any source), agents-pkg looks for these directories in the repo:
+With **--global** (default):
 
-| Category   | Location in repo   | Contents |
-|-----------|--------------------|----------|
-| Skills    | `skills/`          | Directory the skills CLI can use: a single `SKILL.md` or subdirs each with `SKILL.md`. |
-| Subagents | `agents/`          | One `.md` file per subagent; filename (without `.md`) is the name. |
-| Commands  | `commands/`        | One `.md` file per command; filename (without `.md`) is the name. |
-| Hooks     | `hooks/hooks.json` | Cursor-style JSON: `{ "version": 1, "hooks": { "hookName": [{ "command": "path" }] } }`. Merged into project `.cursor/hooks.json` only (Cursor only). |
+| Kind | Location |
+|------|----------|
+| Subagents | `~/.cursor/subagents/` |
+| Commands | `~/.cursor/commands/` |
+| Skills | `~/.cursor/skills/` |
+| Rules | `~/.cursor/rules/` |
+| Hooks | Project `.cursor/hooks.json` (merged) |
 
-If a path is missing, that category is skipped. Use `--skills`, `--subagents`, `--commands`, or `--hooks` to install only the categories you want.
+With **--project**:
 
----
-
-## Folder layout (where agents-pkg installs)
-
-| Kind      | Cursor (project / global)              | Claude (project / global)              |
-|-----------|----------------------------------------|----------------------------------------|
-| Skills    | `.agents/skills` / `~/.cursor/skills`  | `.claude/skills` / `~/.claude/skills`  |
-| Subagents | `.cursor/agents` / `~/.cursor/agents`  | `.claude/agents` / `~/.claude/agents`  |
-| Commands  | `.cursor/commands` / `~/.cursor/commands` | `.claude/commands` / `~/.claude/commands` |
-| Hooks     | `.cursor/hooks.json` / `~/.cursor/hooks.json` (Cursor only) | — |
-
-Claude’s global config root can be overridden with `CLAUDE_CONFIG_DIR` (default `~/.claude`).
+| Kind | Location |
+|------|----------|
+| Subagents | `<project>/.cursor/subagents/` |
+| Commands | `<project>/.cursor/commands/` |
+| Skills | `<project>/.cursor/skills/` |
+| Rules | `<project>/.cursor/rules/` |
+| Hooks | `<project>/.cursor/hooks.json` (merged) |
 
 ---
 
 ## Development
 
-TypeScript, build to `dist/`, tests with **vitest**.
+TypeScript, build to `dist/`, tests with Vitest.
 
 ```bash
 pnpm install
 pnpm build          # Compile src/ → dist/
-pnpm dev -- --help  # Run from source (tsx)
-pnpm test           # pretest runs build, then vitest
-pnpm type-check     # tsc --noEmit
+pnpm dev -- --help   # Run from source (tsx)
+pnpm test            # pretest runs build, then vitest
+pnpm type-check      # tsc --noEmit
 ```
-
-**Tests:** Lock file (read/write, version, `AGENTS_PKG_HOME`), source resolution (stub, local path, literal), subagents and commands (list/add/remove), CLI (help, version, subagents list, commands list, config path).
 
 ### CI and publishing
 
-- **CI** (`.github/workflows/ci.yml`): On push/PR to `main`, runs type-check, build, and tests. Ignores changes that only touch `*.md`.
-- **Publish** (`.github/workflows/publish.yml`): Same model as the [skills](https://github.com/vercel-labs/skills) repo.
-  - **Push to main**: Include `[patch]` or `[minor]` in a commit message; the workflow bumps the version, pushes the new commit and tag, publishes to npm, and creates a GitHub Release.
-  - **Manual**: Actions → Publish → Run workflow, then choose **patch** or **minor** to bump and release.
-  - **Tag push**: Pushing a tag `v*` triggers a publish-only run (no bump; the tag must already point to a commit with that version in `package.json`).
-
-Add an **NPM_TOKEN** secret (Settings → Secrets and variables → Actions): create an [npm access token](https://www.npmjs.com/settings/~/tokens) (automation type) and add it as `NPM_TOKEN`.
+- **CI** (`.github/workflows/ci.yml`): On push/PR to `main`, runs type-check, build, and tests.
+- **Publish** (`.github/workflows/publish.yml`): Version bump and npm publish (e.g. via `[patch]` / `[minor]` in commit message or manual workflow run). Add **NPM_TOKEN** secret for npm publish.
 
 ---
 
