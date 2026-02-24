@@ -1,5 +1,5 @@
 /**
- * agent-pkg update: for each installed marketplace, re-fetch source, read .cursor-plugin/marketplace.json, reinstall if version changed.
+ * agents-pkg update: for each installed marketplace, re-fetch source, read .cursor-plugin/marketplace.json, reinstall if version changed.
  */
 
 import { rm } from 'fs/promises';

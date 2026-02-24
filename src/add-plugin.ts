@@ -166,7 +166,7 @@ export async function installMarketplaceFromDir(
 export async function runAddPlugin(args: string[]): Promise<void> {
   const source = args[0]?.trim();
   if (!source) {
-    fatal('Usage: agent-pkg add-plugin <source> [plugin-name]\n  source = repo URL or local path; optional plugin-name = install only that plugin.');
+    fatal('Usage: agents-pkg add-plugin <source> [plugin-name]\n  source = repo URL or local path; optional plugin-name = install only that plugin.');
   }
   const pluginNameFilter = args[1]?.trim();
 

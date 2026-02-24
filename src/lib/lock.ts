@@ -1,5 +1,5 @@
 /**
- * agent-pkg lock file: ~/.agents/.agent-pkg-lock.json
+ * agents-pkg lock file: ~/.agents/.agents-pkg-lock.json
  * Marketplace-only: tracks installed marketplaces by name.
  */
 
@@ -14,7 +14,7 @@ import {
 import type { LockFile } from './types.js';
 
 export function getHome(): string {
-  const env = process.env.AGENT_PKG_HOME;
+  const env = process.env.AGENTS_PKG_HOME;
   if (env && typeof env === 'string' && env.trim()) return env.trim();
   return homedir();
 }
@@ -35,7 +35,7 @@ function createEmptyLock(): LockFile {
 }
 
 /**
- * Read the agent-pkg lock file.
+ * Read the agents-pkg lock file.
  * Returns empty lock if missing or invalid.
  */
 export async function readLock(): Promise<LockFile> {

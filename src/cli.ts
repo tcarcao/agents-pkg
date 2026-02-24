@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * agent-pkg — Cursor-only marketplace installer.
+ * agents-pkg — Cursor-only marketplace installer.
  * Commands: add-plugin <source> [plugin-name], del-plugin <name>, update.
  */
 
@@ -26,9 +26,9 @@ function getVersion(): string {
 }
 
 function showBanner(): void {
-  console.log('agent-pkg — Cursor marketplace installer');
+  console.log('agents-pkg — Cursor marketplace installer');
   console.log('');
-  console.log('Usage: agent-pkg <command> [options]');
+  console.log('Usage: agents-pkg <command> [options]');
   console.log('');
   console.log('Commands:');
   console.log('  add-plugin <source> [plugin-name]   Install marketplace from source (read .cursor-plugin/marketplace.json inside source); all plugins or one by name');
@@ -36,10 +36,10 @@ function showBanner(): void {
   console.log('  update                             Re-fetch each installed marketplace and reinstall if version changed');
   console.log('');
   console.log('Examples:');
-  console.log('  agent-pkg add-plugin https://gitlab.com/org/ai-kit');
-  console.log('  agent-pkg add-plugin ./local-repo ai-engineering-kit-backend');
-  console.log('  agent-pkg del-plugin ai-engineering-kit');
-  console.log('  agent-pkg update');
+  console.log('  agents-pkg add-plugin https://gitlab.com/org/ai-kit');
+  console.log('  agents-pkg add-plugin ./local-repo ai-engineering-kit-backend');
+  console.log('  agents-pkg del-plugin ai-engineering-kit');
+  console.log('  agents-pkg update');
 }
 
 async function main(): Promise<void> {
@@ -77,7 +77,7 @@ async function main(): Promise<void> {
       break;
 
     default:
-      fatal('Unknown command: ' + command + '\nRun agent-pkg --help for usage.');
+      fatal('Unknown command: ' + command + '\nRun agents-pkg --help for usage.');
   }
 }
 

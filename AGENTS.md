@@ -1,19 +1,19 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents working on the `agent-pkg` CLI codebase.
+This file provides guidance to AI coding agents working on the `agents-pkg` CLI codebase.
 
 ## Project Overview
 
-`agent-pkg` is a **Cursor-only** marketplace installer. It installs plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to `~/.agents/agent-pkg/marketplace/<name>/<plugin-name>/` and **symlinked** into `.cursor/agents`, `.cursor/commands`, `~/.cursor/skills`, and hooks are merged into `.cursor/hooks.json`. Use `agent-pkg update` to re-fetch each installed marketplace and reinstall when the manifest version changed.
+`agents-pkg` is a **Cursor-only** marketplace installer. It installs plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/` and **symlinked** into `.cursor/agents`, `.cursor/commands`, `~/.cursor/skills`, and hooks are merged into `.cursor/hooks.json`. Use `agents-pkg update` to re-fetch each installed marketplace and reinstall when the manifest version changed.
 
 ## Commands
 
 | Command | Description |
 | ------- | ----------- |
-| `agent-pkg` | Show banner with available commands |
-| `agent-pkg add-plugin <source> [plugin-name]` | Install marketplace from source (reads `.cursor-plugin/marketplace.json` inside source); all plugins or one by name |
-| `agent-pkg del-plugin <name>` | Uninstall marketplace by name (remove symlinks, delete store, update lock) |
-| `agent-pkg update` | For each installed marketplace, re-fetch source, read `.cursor-plugin/marketplace.json`, reinstall if version changed |
+| `agents-pkg` | Show banner with available commands |
+| `agents-pkg add-plugin <source> [plugin-name]` | Install marketplace from source (reads `.cursor-plugin/marketplace.json` inside source); all plugins or one by name |
+| `agents-pkg del-plugin <name>` | Uninstall marketplace by name (remove symlinks, delete store, update lock) |
+| `agents-pkg update` | For each installed marketplace, re-fetch source, read `.cursor-plugin/marketplace.json`, reinstall if version changed |
 
 ## Marketplace format
 
@@ -60,7 +60,7 @@ src/
 
 ## Store and symlinks
 
-- **Store:** `~/.agents/agent-pkg/marketplace/<marketplace-name>/<plugin-name>/` — copied from source (e.g. `./global`).
+- **Store:** `~/.agents/agents-pkg/marketplace/<marketplace-name>/<plugin-name>/` — copied from source (e.g. `./global`).
 - **Symlinks:** Each plugin’s `agents/*.md`, `commands/*.md`, and `skills/<dir>/` are symlinked into project `.cursor/agents`, `.cursor/commands`, and global `~/.cursor/skills`. Hooks from `hooks/hooks.json` are **merged** into project `.cursor/hooks.json` (no symlink).
 - **Sources:** Local paths and GitLab/GitHub (full URL or shorthand). No API dependency for update—clone and read file.
 
@@ -90,7 +90,7 @@ pnpm test
 pnpm type-check
 ```
 
-Tests use the built `dist/cli.js`. Set `AGENT_PKG_HOME` to a temp dir to avoid touching real `~/.agents/`.
+Tests use the built `dist/cli.js`. Set `AGENTS_PKG_HOME` to a temp dir to avoid touching real `~/.agents/`.
 
 ## Code style and patterns
 

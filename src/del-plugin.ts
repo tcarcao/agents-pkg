@@ -12,7 +12,7 @@ import { fatal } from './lib/errors.js';
 export async function runDelPlugin(args: string[]): Promise<void> {
   const name = args[0]?.trim();
   if (!name) {
-    fatal('Usage: agent-pkg del-plugin <name>\n  name = marketplace name (e.g. ai-engineering-kit).');
+    fatal('Usage: agents-pkg del-plugin <name>\n  name = marketplace name (e.g. ai-engineering-kit).');
   }
 
   const lock = await readLock();

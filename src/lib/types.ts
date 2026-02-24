@@ -1,5 +1,5 @@
 /**
- * Shared types for agent-pkg (marketplace-only).
+ * Shared types for agents-pkg (marketplace-only).
  */
 
 /** Tracked marketplace: name, source (user-passed), version from manifest, installed plugin names. */

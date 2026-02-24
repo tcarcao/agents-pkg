@@ -13,11 +13,11 @@ import { expect } from 'vitest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
 
-describe('agent-pkg CLI', () => {
+describe('agents-pkg CLI', () => {
   describe('--help', () => {
     it('displays usage with add-plugin, del-plugin, update', () => {
       const output = runCliOutput(['--help'], ROOT);
-      expect(output).toContain('Usage: agent-pkg <command>');
+      expect(output).toContain('Usage: agents-pkg <command>');
       expect(output).toContain('add-plugin');
       expect(output).toContain('del-plugin');
       expect(output).toContain('update');
@@ -47,7 +47,7 @@ describe('agent-pkg CLI', () => {
   describe('no arguments', () => {
     it('displays banner with add-plugin and update', () => {
       const output = runCliOutput([], ROOT);
-      expect(output).toContain('agent-pkg');
+      expect(output).toContain('agents-pkg');
       expect(output).toContain('add-plugin');
       expect(output).toContain('del-plugin');
       expect(output).toContain('update');
@@ -66,7 +66,7 @@ describe('agent-pkg CLI', () => {
     it('with no args exits non-zero and prints usage', () => {
       const result = runCli(['add-plugin'], ROOT);
       expect(result.exitCode).toBe(1);
-      expect(result.stdout + result.stderr).toContain('Usage: agent-pkg add-plugin <source>');
+      expect(result.stdout + result.stderr).toContain('Usage: agents-pkg add-plugin <source>');
     });
   });
 
@@ -74,7 +74,7 @@ describe('agent-pkg CLI', () => {
     it('with no args exits non-zero and prints usage', () => {
       const result = runCli(['del-plugin'], ROOT);
       expect(result.exitCode).toBe(1);
-      expect(result.stdout + result.stderr).toContain('Usage: agent-pkg del-plugin <name>');
+      expect(result.stdout + result.stderr).toContain('Usage: agents-pkg del-plugin <name>');
     });
   });
 

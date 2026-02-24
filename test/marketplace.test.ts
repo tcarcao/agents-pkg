@@ -16,7 +16,7 @@ import { expect } from 'vitest';
 describe('marketplace', () => {
   describe('readMarketplaceManifest', () => {
     it('reads and parses valid manifest', async () => {
-      const dir = await mkdtemp(join(tmpdir(), 'agent-pkg-mp-'));
+      const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-mp-'));
       try {
         await mkdir(join(dir, '.cursor-plugin'), { recursive: true });
         const manifest = {
@@ -46,7 +46,7 @@ describe('marketplace', () => {
     });
 
     it('throws when .cursor-plugin/marketplace.json is missing', async () => {
-      const dir = await mkdtemp(join(tmpdir(), 'agent-pkg-mp-'));
+      const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-mp-'));
       try {
         await expect(readMarketplaceManifest(dir)).rejects.toThrow(/marketplace manifest/);
       } finally {
@@ -55,7 +55,7 @@ describe('marketplace', () => {
     });
 
     it('throws when name is missing', async () => {
-      const dir = await mkdtemp(join(tmpdir(), 'agent-pkg-mp-'));
+      const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-mp-'));
       try {
         await mkdir(join(dir, '.cursor-plugin'), { recursive: true });
         await writeFile(
@@ -70,7 +70,7 @@ describe('marketplace', () => {
     });
 
     it('throws when plugins is not an array', async () => {
-      const dir = await mkdtemp(join(tmpdir(), 'agent-pkg-mp-'));
+      const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-mp-'));
       try {
         await mkdir(join(dir, '.cursor-plugin'), { recursive: true });
         await writeFile(
@@ -86,18 +86,18 @@ describe('marketplace', () => {
   });
 
   describe('getMarketplaceStorePath / getPluginStorePath', () => {
-    it('returns paths under AGENT_PKG_HOME', async () => {
-      const orig = process.env.AGENT_PKG_HOME;
-      const dir = join(tmpdir(), 'agent-pkg-store-test');
-      process.env.AGENT_PKG_HOME = dir;
+    it('returns paths under AGENTS_PKG_HOME', async () => {
+      const orig = process.env.AGENTS_PKG_HOME;
+      const dir = join(tmpdir(), 'agents-pkg-store-test');
+      process.env.AGENTS_PKG_HOME = dir;
       try {
         const store = getMarketplaceStorePath('ai-kit');
-        expect(store).toBe(join(dir, '.agents', 'agent-pkg', 'marketplace', 'ai-kit'));
+        expect(store).toBe(join(dir, '.agents', 'agents-pkg', 'marketplace', 'ai-kit'));
         const pluginStore = getPluginStorePath('ai-kit', 'ai-kit-global');
-        expect(pluginStore).toBe(join(dir, '.agents', 'agent-pkg', 'marketplace', 'ai-kit', 'ai-kit-global'));
+        expect(pluginStore).toBe(join(dir, '.agents', 'agents-pkg', 'marketplace', 'ai-kit', 'ai-kit-global'));
       } finally {
-        if (orig !== undefined) process.env.AGENT_PKG_HOME = orig;
-        else delete process.env.AGENT_PKG_HOME;
+        if (orig !== undefined) process.env.AGENTS_PKG_HOME = orig;
+        else delete process.env.AGENTS_PKG_HOME;
       }
     });
   });

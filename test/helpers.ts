@@ -20,7 +20,7 @@ export function stripAnsi(str: string): string {
 /**
  * Create a temporary directory. Caller should rm it when done.
  */
-export async function createTempDir(prefix = 'agent-pkg-test-'): Promise<string> {
+export async function createTempDir(prefix = 'agents-pkg-test-'): Promise<string> {
   return await mkdtemp(join(tmpdir(), prefix));
 }
 
@@ -31,7 +31,7 @@ export interface RunCliResult {
 }
 
 /**
- * Run agent-pkg CLI with args; returns { stdout, stderr, exitCode }.
+ * Run agents-pkg CLI with args; returns { stdout, stderr, exitCode }.
  * Uses compiled dist/cli.js.
  */
 export function runCli(

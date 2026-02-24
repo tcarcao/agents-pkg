@@ -1,14 +1,14 @@
 /**
- * Shared constants for agent-pkg (marketplace-only, Cursor).
+ * Shared constants for agents-pkg (marketplace-only, Cursor).
  * Same parent dir as skills: ~/.agents/
  */
 
 export const AGENTS_DIR = '.agents';
-export const LOCK_FILE = '.agent-pkg-lock.json';
+export const LOCK_FILE = '.agents-pkg-lock.json';
 export const CURRENT_LOCK_VERSION = 1;
 
-/** Marketplace store under ~/.agents/agent-pkg/marketplace/<name>/<plugin-name> */
-export const MARKETPLACE_DIR = 'agent-pkg/marketplace';
+/** Marketplace store under ~/.agents/agents-pkg/marketplace/<name>/<plugin-name> */
+export const MARKETPLACE_DIR = 'agents-pkg/marketplace';
 
 /** Path relative to resolved source dir: .cursor-plugin/marketplace.json */
 export const MARKETPLACE_JSON = '.cursor-plugin/marketplace.json';

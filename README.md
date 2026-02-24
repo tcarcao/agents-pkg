@@ -1,8 +1,8 @@
-# agent-pkg
+# agents-pkg
 
 A wrapper around the [skills](https://github.com/vercel-labs/skills) CLI for **Cursor** and **Claude Code**. It keeps the same config location (`~/.agents/`) and folder layout each app expects, and adds **subagents** and **commands** management for both.
 
-- **Skills** — Pass-through to `npx skills` (e.g. `agent-pkg skills add owner/repo`) with `--agent cursor claude-code` by default.
+- **Skills** — Pass-through to `npx skills` (e.g. `agents-pkg skills add owner/repo`) with `--agent cursor claude-code` by default.
 - **Subagents** — Agent definition files (`.md`) in `.cursor/agents` and `.claude/agents`.
 - **Commands** — Slash commands in `.cursor/commands` and `.claude/commands`.
 - **Hooks** — Cursor only: `.cursor/hooks.json` (Claude uses a different hooks setup and is not managed here).
@@ -14,11 +14,11 @@ A wrapper around the [skills](https://github.com/vercel-labs/skills) CLI for **C
 ## Install
 
 ```bash
-npm install -g agent-pkg
+npm install -g agents-pkg
 # or
-pnpm add -g agent-pkg
+pnpm add -g agents-pkg
 # or run without installing
-npx agent-pkg --help
+npx agents-pkg --help
 ```
 
 **Requires:** Node.js 18+
@@ -29,10 +29,10 @@ npx agent-pkg --help
 
 | Item | Location |
 |------|----------|
-| Lock file | `~/.agents/.agent-pkg-lock.json` (same parent as skills’ `.skill-lock.json`) |
+| Lock file | `~/.agents/.agents-pkg-lock.json` (same parent as skills’ `.skill-lock.json`) |
 | Schema | `{ "version": 1, "agents": { ... }, "sources": { "owner/repo": { "source", "repoHash", "options", "updatedAt" } } }` |
 
-Override home for tests: set `AGENT_PKG_HOME` to a temp directory.
+Override home for tests: set `AGENTS_PKG_HOME` to a temp directory.
 
 ---
 
@@ -43,9 +43,9 @@ Override home for tests: set `AGENT_PKG_HOME` to a temp directory.
 Pass a **source** (GitHub `owner/repo`, git URL, or local path). By default this installs **skills**, **subagents**, **commands**, and **hooks** (Cursor only) from that repo. Use flags to install only what you want:
 
 ```bash
-agent-pkg owner/repo                         # install skills + subagents + commands + hooks
-agent-pkg owner/repo --subagents --hooks     # only subagents and hooks
-agent-pkg ./my-local-repo --skills           # only skills from local path
+agents-pkg owner/repo                         # install skills + subagents + commands + hooks
+agents-pkg owner/repo --subagents --hooks     # only subagents and hooks
+agents-pkg ./my-local-repo --skills           # only skills from local path
 ```
 
 The repo is expected to follow the [repo layout convention](#repo-layout-convention-for-install-from-source) below.
@@ -55,15 +55,15 @@ The repo is expected to follow the [repo layout convention](#repo-layout-convent
 Under the `skills` command, all of these are forwarded to `npx skills` with **`--agent cursor claude-code`** unless you pass `--agent` yourself.
 
 ```bash
-agent-pkg skills add vercel-labs/agent-skills
-agent-pkg skills remove <skill>
-agent-pkg skills list
-agent-pkg skills find
-agent-pkg skills check
-agent-pkg skills update
-agent-pkg skills init [name]
-agent-pkg skills experimental_install
-agent-pkg skills experimental_sync
+agents-pkg skills add vercel-labs/agent-skills
+agents-pkg skills remove <skill>
+agents-pkg skills list
+agents-pkg skills find
+agents-pkg skills check
+agents-pkg skills update
+agents-pkg skills init [name]
+agents-pkg skills experimental_install
+agents-pkg skills experimental_sync
 ```
 
 ### Subagents (Cursor + Claude)
@@ -71,9 +71,9 @@ agent-pkg skills experimental_sync
 Subagents are `.md` files in `.cursor/agents` and `.claude/agents`. **Source** can be: omitted (stub), a local path, an HTTP(S) URL, or GitHub `owner/repo/path/to/file.md`.
 
 ```bash
-agent-pkg subagents list
-agent-pkg subagents add <name> [source]   # add -g for global dirs too
-agent-pkg subagents remove <name>
+agents-pkg subagents list
+agents-pkg subagents add <name> [source]   # add -g for global dirs too
+agents-pkg subagents remove <name>
 ```
 
 ### Commands (slash commands)
@@ -81,9 +81,9 @@ agent-pkg subagents remove <name>
 Slash commands live in `.cursor/commands` and `.claude/commands`. Same **source** options as subagents.
 
 ```bash
-agent-pkg commands list
-agent-pkg commands add <name> [source]     # add -g for global dirs too
-agent-pkg commands remove <name>
+agents-pkg commands list
+agents-pkg commands add <name> [source]     # add -g for global dirs too
+agents-pkg commands remove <name>
 ```
 
 ### Hooks (Cursor only)
@@ -91,37 +91,37 @@ agent-pkg commands remove <name>
 Hooks run shell commands at lifecycle events in Cursor (`.cursor/hooks.json`). Claude uses a different setup and is not managed here. See [Cursor hooks](https://cursor.com/docs/agent/third-party-hooks) for event names (e.g. `beforeShellExecution`, `afterFileEdit`).
 
 ```bash
-agent-pkg hooks list
-agent-pkg hooks add <hookName> <command>   # e.g. hooks add beforeShellExecution ./check.sh; add -g for global
-agent-pkg hooks remove <hookName>
+agents-pkg hooks list
+agents-pkg hooks add <hookName> <command>   # e.g. hooks add beforeShellExecution ./check.sh; add -g for global
+agents-pkg hooks remove <hookName>
 ```
 
 ### Update
 
-`agent-pkg update` runs **skills update** (so all skills installed via `npx skills` are updated), then checks each **tracked GitHub source** (repos you installed from with `agent-pkg owner/repo`). For each repo, it fetches the current default-branch tree hash from the GitHub API; if the hash changed, it re-installs from that source (skills, subagents, commands, hooks per the options used when you first installed). Local-path installs are not tracked for update.
+`agents-pkg update` runs **skills update** (so all skills installed via `npx skills` are updated), then checks each **tracked GitHub source** (repos you installed from with `agents-pkg owner/repo`). For each repo, it fetches the current default-branch tree hash from the GitHub API; if the hash changed, it re-installs from that source (skills, subagents, commands, hooks per the options used when you first installed). Local-path installs are not tracked for update.
 
 ```bash
-agent-pkg update
+agents-pkg update
 ```
 
-Tracking is stored in the lock file (`~/.agents/.agent-pkg-lock.json` under `sources`). Optional: set `GITHUB_TOKEN` or `GH_TOKEN` for higher API rate limits.
+Tracking is stored in the lock file (`~/.agents/.agents-pkg-lock.json` under `sources`). Optional: set `GITHUB_TOKEN` or `GH_TOKEN` for higher API rate limits.
 
 ### Agents and config
 
 Custom install targets (in the lock file) and path info:
 
 ```bash
-agent-pkg agents list
-agent-pkg agents add <name> <projectDir> [globalDir]
-agent-pkg agents remove <name>
-agent-pkg config path
+agents-pkg agents list
+agents-pkg agents add <name> <projectDir> [globalDir]
+agents-pkg agents remove <name>
+agents-pkg config path
 ```
 
 ---
 
 ## Repo layout convention (install from source)
 
-When you run `agent-pkg owner/repo` (or any source), agent-pkg looks for these directories in the repo:
+When you run `agents-pkg owner/repo` (or any source), agents-pkg looks for these directories in the repo:
 
 | Category   | Location in repo   | Contents |
 |-----------|--------------------|----------|
@@ -134,7 +134,7 @@ If a path is missing, that category is skipped. Use `--skills`, `--subagents`, `
 
 ---
 
-## Folder layout (where agent-pkg installs)
+## Folder layout (where agents-pkg installs)
 
 | Kind      | Cursor (project / global)              | Claude (project / global)              |
 |-----------|----------------------------------------|----------------------------------------|
@@ -159,7 +159,7 @@ pnpm test           # pretest runs build, then vitest
 pnpm type-check     # tsc --noEmit
 ```
 
-**Tests:** Lock file (read/write, version, `AGENT_PKG_HOME`), source resolution (stub, local path, literal), subagents and commands (list/add/remove), CLI (help, version, subagents list, commands list, config path).
+**Tests:** Lock file (read/write, version, `AGENTS_PKG_HOME`), source resolution (stub, local path, literal), subagents and commands (list/add/remove), CLI (help, version, subagents list, commands list, config path).
 
 ### CI and publishing
 

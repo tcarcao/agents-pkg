@@ -1,6 +1,6 @@
 /**
- * Lock file tests (~/.agents/.agent-pkg-lock.json).
- * Uses AGENT_PKG_HOME to avoid touching real home.
+ * Lock file tests (~/.agents/.agents-pkg-lock.json).
+ * Uses AGENTS_PKG_HOME to avoid touching real home.
  */
 
 import { describe, it } from 'vitest';
@@ -11,23 +11,23 @@ import { getLockPath, getAgentsDir, readLock, writeLock } from '../src/lib/lock.
 import { expect } from 'vitest';
 
 async function withTempHome(fn: (dir: string) => Promise<void>): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'agent-pkg-lock-'));
-  const orig = process.env.AGENT_PKG_HOME;
-  process.env.AGENT_PKG_HOME = dir;
+  const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-lock-'));
+  const orig = process.env.AGENTS_PKG_HOME;
+  process.env.AGENTS_PKG_HOME = dir;
   try {
     await fn(dir);
   } finally {
-    if (orig !== undefined) process.env.AGENT_PKG_HOME = orig;
-    else delete process.env.AGENT_PKG_HOME;
+    if (orig !== undefined) process.env.AGENTS_PKG_HOME = orig;
+    else delete process.env.AGENTS_PKG_HOME;
     await rm(dir, { recursive: true, force: true });
   }
 }
 
 describe('lock', () => {
   describe('getLockPath', () => {
-    it('returns path under AGENT_PKG_HOME when set', async () => {
+    it('returns path under AGENTS_PKG_HOME when set', async () => {
       await withTempHome(async (dir) => {
-        expect(getLockPath()).toBe(join(dir, '.agents', '.agent-pkg-lock.json'));
+        expect(getLockPath()).toBe(join(dir, '.agents', '.agents-pkg-lock.json'));
       });
     });
 
@@ -52,7 +52,7 @@ describe('lock', () => {
         const agentsDir = join(dir, '.agents');
         await mkdir(agentsDir, { recursive: true });
         await writeFile(
-          join(agentsDir, '.agent-pkg-lock.json'),
+          join(agentsDir, '.agents-pkg-lock.json'),
           JSON.stringify({ version: 0, marketplaces: {} }),
           'utf-8'
         );
@@ -77,7 +77,7 @@ describe('lock', () => {
             },
           },
         };
-        await writeFile(join(dir, '.agents', '.agent-pkg-lock.json'), JSON.stringify(content), 'utf-8');
+        await writeFile(join(dir, '.agents', '.agents-pkg-lock.json'), JSON.stringify(content), 'utf-8');
         const lock = await readLock();
         expect(lock.version).toBe(1);
         expect(lock.marketplaces['ai-kit'].version).toBe('0.1.0');

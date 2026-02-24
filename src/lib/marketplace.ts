@@ -61,14 +61,14 @@ export async function readMarketplaceManifest(sourceDir: string): Promise<Market
 }
 
 /**
- * Store path for a marketplace: ~/.agents/agent-pkg/marketplace/<name>
+ * Store path for a marketplace: ~/.agents/agents-pkg/marketplace/<name>
  */
 export function getMarketplaceStorePath(name: string): string {
   return join(getHome(), AGENTS_DIR, MARKETPLACE_DIR, name);
 }
 
 /**
- * Store path for a plugin: ~/.agents/agent-pkg/marketplace/<marketplaceName>/<pluginName>
+ * Store path for a plugin: ~/.agents/agents-pkg/marketplace/<marketplaceName>/<pluginName>
  */
 export function getPluginStorePath(marketplaceName: string, pluginName: string): string {
   return join(getMarketplaceStorePath(marketplaceName), pluginName);

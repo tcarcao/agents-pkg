@@ -90,7 +90,7 @@ export async function resolveSourceToDir(source: string): Promise<ResolveSourceT
     }
   }
 
-  const tempDir = await mkdtemp(join(tmpdir(), 'agent-pkg-'));
+  const tempDir = await mkdtemp(join(tmpdir(), 'agents-pkg-'));
   const result = spawnSync('git', ['clone', '--depth', '1', cloneUrl, tempDir], {
     stdio: ['ignore', 'pipe', 'pipe'],
     encoding: 'utf-8',

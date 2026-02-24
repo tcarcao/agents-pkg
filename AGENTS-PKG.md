@@ -1,11 +1,11 @@
-# agent-pkg — Architecture and extension guide
+# agents-pkg — Architecture and extension guide
 
-agent-pkg is a wrapper around the skills CLI for Cursor and Claude. This document describes how the code is structured and how to extend it so the design stays aligned with the main skills CLI.
+agents-pkg is a wrapper around the skills CLI for Cursor and Claude. This document describes how the code is structured and how to extend it so the design stays aligned with the main skills CLI.
 
 ## Architecture
 
 ```
-agent-pkg/
+agents-pkg/
 ├── src/
 │   ├── cli.ts              # Single entry: argv → switch (command) → run*()
 │   ├── subagents.ts         # runSubagentsList, runSubagentsAdd, runSubagentsRemove
@@ -52,7 +52,7 @@ agent-pkg/
    - Export a `parseMycmdSubcommand(rest)` that returns `{ sub, args }` and branch in `cli.ts` (like subagents/commands/agents).
 
 4. **Update help**  
-   Update `showBanner()` in `cli.ts` so `agent-pkg --help` documents the new command.
+   Update `showBanner()` in `cli.ts` so `agents-pkg --help` documents the new command.
 
 ## Adding a new "resource" (like subagents/commands)
 
@@ -82,6 +82,6 @@ If the feature is "list / add / remove markdown files in several directories":
 
 ## Install from source
 
-When the first argument is not a command (`skills`, `subagents`, `commands`) and not `--help`/`--version`, it is treated as a **source**. agent-pkg resolves the source to a local directory (clone to temp for GitHub/URL, or use path for local), then installs from it according to `--skills`, `--subagents`, `--commands` (default: all). See `src/install-from-source.ts` and `lib/source-dir.ts`. Repo layout convention: `skills/`, `agents/`, `commands/` (see constants `REPO_SKILLS_DIR`, `REPO_AGENTS_DIR`, `REPO_COMMANDS_DIR` in `lib/constants.ts`).
+When the first argument is not a command (`skills`, `subagents`, `commands`) and not `--help`/`--version`, it is treated as a **source**. agents-pkg resolves the source to a local directory (clone to temp for GitHub/URL, or use path for local), then installs from it according to `--skills`, `--subagents`, `--commands` (default: all). See `src/install-from-source.ts` and `lib/source-dir.ts`. Repo layout convention: `skills/`, `agents/`, `commands/` (see constants `REPO_SKILLS_DIR`, `REPO_AGENTS_DIR`, `REPO_COMMANDS_DIR` in `lib/constants.ts`).
 
-Keeping a single entry point, delegated runners, shared types/constants, and a small set of lib helpers makes agent-pkg easy to extend and consistent with the main skills CLI philosophy.
+Keeping a single entry point, delegated runners, shared types/constants, and a small set of lib helpers makes agents-pkg easy to extend and consistent with the main skills CLI philosophy.
