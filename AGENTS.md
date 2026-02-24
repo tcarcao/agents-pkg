@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents working on the `agents-pkg` CLI 
 
 ## Project Overview
 
-`agents-pkg` is a **Cursor-only** marketplace installer. It installs plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/` and **symlinked** into `.cursor/agents`, `.cursor/commands`, `~/.cursor/skills`, `.cursor/rules`; hooks are merged into `.cursor/hooks.json`. Use `agents-pkg update` to re-fetch each installed marketplace and reinstall when the manifest version changed.
+`agents-pkg` is a **Cursor-only** marketplace installer. It installs plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/`. **Agents** are **copied** into `.cursor/agents` (so Cursor recognizes subagents); **commands**, **skills**, and **rules** are **symlinked** into `.cursor/commands`, `~/.cursor/skills`, `.cursor/rules`. Hooks are merged into `.cursor/hooks.json`. Use `agents-pkg update` to re-fetch each installed marketplace and reinstall when the manifest version changed.
 
 ## Commands
 
@@ -13,8 +13,8 @@ This file provides guidance to AI coding agents working on the `agents-pkg` CLI 
 | `agents-pkg` | Show banner with available commands |
 | `agents-pkg add-plugin <source> [plugin-name]` | Install marketplace from source (reads `.cursor-plugin/marketplace.json` inside source); all plugins or one by name |
 | `agents-pkg list` | List installed marketplaces and their plugins (name, version, scope, source, plugin names) |
-| `agents-pkg del-plugin <marketplace> <plugin>` | Remove one plugin from a marketplace (remove its symlinks, delete its store dir, update lock; remove marketplace entry if last plugin) |
-| `agents-pkg del-marketplace <name>` | Uninstall entire marketplace by name (remove symlinks, delete store, update lock) |
+| `agents-pkg del-plugin <marketplace> <plugin>` | Remove one plugin from a marketplace (remove its agent copies and symlinks, delete its store dir, update lock; remove marketplace entry if last plugin) |
+| `agents-pkg del-marketplace <name>` | Uninstall entire marketplace by name (remove agent copies and symlinks, delete store, update lock) |
 | `agents-pkg update` | For each installed marketplace, re-fetch source, read `.cursor-plugin/marketplace.json`, reinstall if version changed |
 
 ## Marketplace format
@@ -45,15 +45,16 @@ The marketplace manifest lives **inside the source** at **`.cursor-plugin/market
 ```
 src/
 ├── cli.ts                 # Main entry: add-plugin, list, del-plugin, del-marketplace, update, --help, --version
-├── add-plugin.ts          # runAddPlugin(), installMarketplaceFromDir(); resolve source → read manifest → copy to store → symlink
+├── add-plugin.ts          # runAddPlugin(), installMarketplaceFromDir(); resolve source → read manifest → copy to store → copy agents, symlink rest
 ├── list.ts                # runList(); list installed marketplaces and plugins
-├── del-marketplace.ts     # runDelMarketplace(); remove symlinks, delete store, update lock
+├── del-marketplace.ts     # runDelMarketplace(); remove agent copies and symlinks, delete store, update lock
 ├── del-plugin.ts          # runDelPlugin(); remove one plugin from a marketplace
 ├── update.ts              # runUpdate(); per marketplace resolve source, read manifest, reinstall if version changed
 └── lib/
     ├── constants.ts       # AGENTS_DIR, LOCK_FILE, MARKETPLACE_DIR, MARKETPLACE_JSON, REPO_* dirs
     ├── types.ts           # LockFile, MarketplaceEntry
     ├── marketplace.ts     # readMarketplaceManifest(sourceDir), getMarketplaceStorePath, getPluginStorePath
+    ├── agents-copy.ts     # copyAgentsFromPluginStore, removeCopiedAgentsForPlugin (agents copied so Cursor sees subagents)
     ├── symlink.ts         # createSymlink, removeSymlinksInDirPointingUnder
     ├── source-dir.ts      # resolveSourceToDir (clone or resolve path; local + GitLab + GitHub)
     ├── lock.ts            # readLock, writeLock, getLockPath, getHome
@@ -62,10 +63,11 @@ src/
     └── errors.ts          # fatal(message)
 ```
 
-## Store and symlinks
+## Store, copies and symlinks
 
 - **Store:** `~/.agents/agents-pkg/marketplace/<marketplace-name>/<plugin-name>/` — copied from source (e.g. `./global`).
-- **Symlinks:** Each plugin’s `agents/*.md`, `commands/*.md`, `skills/<dir>/`, and `rules/*.md` / `rules/*.mdc` are symlinked into project `.cursor/agents`, project `.cursor/commands`, global `~/.cursor/skills`, and project `.cursor/rules`. Hooks from `hooks/hooks.json` are **merged** into project `.cursor/hooks.json` (no symlink).
+- **Agents:** Plugin `agents/*.md` are **copied** into `.cursor/agents` (so Cursor recognizes subagents). On uninstall, those files are removed.
+- **Symlinks:** Plugin `commands/*.md`, `skills/<dir>/`, and `rules/*.md` / `rules/*.mdc` are symlinked into project `.cursor/commands`, global `~/.cursor/skills`, and project `.cursor/rules`. Hooks from `hooks/hooks.json` are **merged** into project `.cursor/hooks.json` (no symlink).
 - **Sources:** Local paths and GitLab/GitHub (full URL or shorthand). No API dependency for update—clone and read file.
 
 ## Lock file (v1)
@@ -77,11 +79,11 @@ src/
 
 | Feature | Implementation |
 | ------- | -------------- |
-| add-plugin | `src/add-plugin.ts`: resolveSourceToDir → readMarketplaceManifest(dir) → copy plugin dirs to store → createSymlink for agents/commands/skills/rules, mergeHooksIntoProject for hooks → writeLock |
+| add-plugin | `src/add-plugin.ts`: resolveSourceToDir → readMarketplaceManifest(dir) → copy plugin dirs to store → copy agents (agents-copy), createSymlink for commands/skills/rules, mergeHooksIntoProject for hooks → writeLock |
 | list | `src/list.ts`: readLock, print each marketplace (name, version, scope, source, plugin names) |
-| del-plugin | `src/del-plugin.ts`: remove one plugin’s symlinks and store (getPluginStorePath); update lock pluginNames; remove marketplace entry if last plugin |
-| del-marketplace | `src/del-marketplace.ts`: removeSymlinksInDirPointingUnder for agents/commands/skills/rules; rm store; update lock |
-| update | `src/update.ts`: for each lock.marketplaces, resolve source to dir, readMarketplaceManifest(dir), if version changed then remove symlinks, rm store, installMarketplaceFromDir, writeLock |
+| del-plugin | `src/del-plugin.ts`: removeCopiedAgentsForPlugin, remove one plugin’s symlinks and store (getPluginStorePath); update lock pluginNames; remove marketplace entry if last plugin |
+| del-marketplace | `src/del-marketplace.ts`: removeCopiedAgentsForPlugin per plugin, removeSymlinksInDirPointingUnder for agents/commands/skills/rules; rm store; update lock |
+| update | `src/update.ts`: for each lock.marketplaces, resolve source to dir, readMarketplaceManifest(dir), if version changed then removeCopiedAgentsForPlugin per plugin, remove symlinks, rm store, installMarketplaceFromDir, writeLock |
 | Source resolution | `lib/source-dir.ts`: resolveSourceToDir (local path, git URL, owner/repo, gitlab.com/owner/repo) |
 
 ## Development

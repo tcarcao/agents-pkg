@@ -4,8 +4,9 @@
 
 import { rm } from 'fs/promises';
 import { resolveSourceToDir } from './lib/source-dir.js';
-import { readMarketplaceManifest, getMarketplaceStorePath } from './lib/marketplace.js';
+import { readMarketplaceManifest, getMarketplaceStorePath, getPluginStorePath } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
+import { removeCopiedAgentsForPlugin } from './lib/agents-copy.js';
 import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
 import { installMarketplaceFromDir } from './add-plugin.js';
 import { readLock, writeLock } from './lib/lock.js';
@@ -40,6 +41,10 @@ export async function runUpdate(): Promise<void> {
 
       console.log(`Updating marketplace ${name} (${entry.version} -> ${newVersion})...`);
       const storeRoot = getMarketplaceStorePath(name);
+      for (const pluginName of entry.pluginNames ?? []) {
+        const pluginStorePath = getPluginStorePath(name, pluginName);
+        await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
+      }
       await removeSymlinksInDirPointingUnder(cursorAgentsDir, storeRoot);
       await removeSymlinksInDirPointingUnder(cursorCommandsDir, storeRoot);
       await removeSymlinksInDirPointingUnder(cursorSkillsDir, storeRoot);

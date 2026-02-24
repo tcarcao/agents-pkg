@@ -13,13 +13,13 @@ import {
 } from './lib/marketplace.js';
 import {
   REPO_SKILLS_DIR,
-  REPO_AGENTS_DIR,
   REPO_COMMANDS_DIR,
   REPO_HOOKS_FILE,
   REPO_RULES_DIR,
 } from './lib/constants.js';
 import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
 import { createSymlink } from './lib/symlink.js';
+import { copyAgentsFromPluginStore } from './lib/agents-copy.js';
 import { mergeHooksIntoProject } from './lib/hooks.js';
 import type { HooksJson } from './lib/hooks.js';
 import { readLock, writeLock } from './lib/lock.js';
@@ -90,13 +90,8 @@ async function installPlugin(
 ): Promise<string[]> {
   const done: string[] = [];
 
-  const agentsDir = join(pluginStorePath, REPO_AGENTS_DIR);
-  const agentNames = await listMdFiles(agentsDir);
-  for (const name of agentNames) {
-    const target = join(agentsDir, name + '.md');
-    const linkPath = join(cursorAgentsDir, name + '.md');
-    await createSymlink(target, linkPath);
-  }
+  // Agents are copied (not symlinked) so Cursor recognizes subagents
+  const agentNames = await copyAgentsFromPluginStore(pluginStorePath, cursorAgentsDir);
   if (agentNames.length > 0) done.push('agents');
 
   const commandsDir = join(pluginStorePath, REPO_COMMANDS_DIR);

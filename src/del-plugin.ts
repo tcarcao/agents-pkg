@@ -7,6 +7,7 @@ import { rm } from 'fs/promises';
 import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
 import { getPluginStorePath } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
+import { removeCopiedAgentsForPlugin } from './lib/agents-copy.js';
 import { readLock, writeLock } from './lib/lock.js';
 import { fatal } from './lib/errors.js';
 
@@ -34,6 +35,7 @@ export async function runDelPlugin(args: string[]): Promise<void> {
   const cursorSkillsDir = getCursorSkillsDir(global, cwd);
   const cursorRulesDir = getCursorRulesDir(global, cwd);
 
+  await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
   await removeSymlinksInDirPointingUnder(cursorAgentsDir, pluginStorePath);
   await removeSymlinksInDirPointingUnder(cursorCommandsDir, pluginStorePath);
   await removeSymlinksInDirPointingUnder(cursorSkillsDir, pluginStorePath);
