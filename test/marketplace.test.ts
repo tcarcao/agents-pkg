@@ -124,9 +124,34 @@ describe('marketplace', () => {
     it('returns version when plugin.json exists with version field', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-plugin-'));
       try {
-        await writeFile(join(dir, 'plugin.json'), JSON.stringify({ version: '1.2.3' }), 'utf-8');
+        await mkdir(join(dir, '.cursor-plugin'), { recursive: true });
+        await writeFile(join(dir, '.cursor-plugin', 'plugin.json'), JSON.stringify({ version: '1.2.3' }), 'utf-8');
         const version = await readPluginVersion(dir);
         expect(version).toBe('1.2.3');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns 0.0.0 when plugin.json exists only at plugin root (old location ignored)', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-plugin-'));
+      try {
+        await writeFile(join(dir, 'plugin.json'), JSON.stringify({ version: '1.2.3' }), 'utf-8');
+        const version = await readPluginVersion(dir);
+        expect(version).toBe('0.0.0');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns version from .cursor-plugin/plugin.json when both locations exist', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-plugin-'));
+      try {
+        await writeFile(join(dir, 'plugin.json'), JSON.stringify({ version: '0.0.0' }), 'utf-8');
+        await mkdir(join(dir, '.cursor-plugin'), { recursive: true });
+        await writeFile(join(dir, '.cursor-plugin', 'plugin.json'), JSON.stringify({ version: '2.0.0' }), 'utf-8');
+        const version = await readPluginVersion(dir);
+        expect(version).toBe('2.0.0');
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
@@ -135,7 +160,8 @@ describe('marketplace', () => {
     it('returns 0.0.0 when plugin.json is invalid or empty', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-plugin-'));
       try {
-        await writeFile(join(dir, 'plugin.json'), 'not json', 'utf-8');
+        await mkdir(join(dir, '.cursor-plugin'), { recursive: true });
+        await writeFile(join(dir, '.cursor-plugin', 'plugin.json'), 'not json', 'utf-8');
         const version = await readPluginVersion(dir);
         expect(version).toBe('0.0.0');
       } finally {
@@ -158,8 +184,8 @@ describe('marketplace', () => {
 
     it('returns readPluginVersion result when plugin has no version', async () => {
       const sourceDir = await mkdtemp(join(tmpdir(), 'agents-pkg-src-'));
-      await mkdir(join(sourceDir, 'p'), { recursive: true });
-      await writeFile(join(sourceDir, 'p', 'plugin.json'), JSON.stringify({ version: '3.0.0' }), 'utf-8');
+      await mkdir(join(sourceDir, 'p', '.cursor-plugin'), { recursive: true });
+      await writeFile(join(sourceDir, 'p', '.cursor-plugin', 'plugin.json'), JSON.stringify({ version: '3.0.0' }), 'utf-8');
       try {
         const plugin = { name: 'p', source: './p' };
         const version = await getPluginVersionFromSource(plugin, sourceDir);

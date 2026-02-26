@@ -77,7 +77,7 @@ export function getPluginStorePath(marketplaceName: string, pluginName: string):
 }
 
 /**
- * Read plugin version from optional plugin.json at plugin dir root.
+ * Read plugin version from optional plugin.json at pluginDir/.cursor-plugin/plugin.json.
  * Returns top-level "version" or '0.0.0' if missing/invalid.
  */
 export async function readPluginVersion(pluginDir: string): Promise<string> {

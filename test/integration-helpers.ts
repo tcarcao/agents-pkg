@@ -62,8 +62,9 @@ export async function createFakeMarketplaceRepoWithHooksAndMcp(): Promise<string
 
 /** Add optional plugin.json with version to a plugin dir (for update tests that need per-plugin version). */
 export async function addPluginJsonVersion(repoDir: string, pluginName: string, version: string): Promise<void> {
+  await mkdir(join(repoDir, pluginName, '.cursor-plugin'), { recursive: true });
   await writeFile(
-    join(repoDir, pluginName, 'plugin.json'),
+    join(repoDir, pluginName, '.cursor-plugin', 'plugin.json'),
     JSON.stringify({ version }),
     'utf-8'
   );

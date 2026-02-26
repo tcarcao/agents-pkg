@@ -38,8 +38,8 @@ The marketplace manifest lives **inside the source** at **`.cursor-plugin/market
 
 - **name** (required): Marketplace name; used as lock key and store parent.
 - **metadata.version**: Marketplace version; when it changes, a full reinstall of the marketplace is performed.
-- **plugins**: Array of `{ name, source, description?, version? }`. `source` is relative to the repo root (e.g. `./global`). Optional **version** per plugin is used for update diff (manifest wins over plugin dir `plugin.json`).
-- **Plugin dir (optional):** A `plugin.json` file at the root of a plugin directory with a top-level `version` field (e.g. `{ "version": "1.0.0" }`) is used when the manifest does not set a version for that plugin.
+- **plugins**: Array of `{ name, source, description?, version? }`. `source` is relative to the repo root (e.g. `./global`). Optional **version** per plugin is used for update diff (manifest wins over plugin dir `.cursor-plugin/plugin.json`).
+- **Plugin dir (optional):** A `plugin.json` file at **`.cursor-plugin/plugin.json`** inside the plugin directory (with a top-level `version` field, e.g. `{ "version": "1.0.0" }`) is used when the manifest does not set a version for that plugin.
 
 ## Architecture
 
