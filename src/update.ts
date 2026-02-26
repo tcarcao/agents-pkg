@@ -76,7 +76,17 @@ export async function runUpdate(): Promise<void> {
         entry.updatedAt = new Date().toISOString();
         updated++;
       } else {
-        if (!entry.pluginVersions) continue;
+        if (!entry.pluginVersions) {
+          // Backfill from source so future updates can do per-plugin version diff
+          entry.pluginVersions = {};
+          for (const pluginName of entry.pluginNames ?? []) {
+            const plugin = manifest.plugins.find((p) => p.name === pluginName);
+            entry.pluginVersions[pluginName] = plugin
+              ? await getPluginVersionFromSource(plugin, sourceDir)
+              : '0.0.0';
+          }
+          lockModified = true;
+        }
 
         const manifestPluginNames = new Set(manifest.plugins.map((p) => p.name));
 

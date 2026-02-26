@@ -134,4 +134,34 @@ describe('integration update', () => {
       await rm(repoDir, { recursive: true, force: true });
     }
   });
+
+  it('when lock has no pluginVersions, update backfills from source and persists lock', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepo();
+    const lockPath = join(homeDir, AGENTS_DIR, LOCK_FILE);
+    try {
+      await addPluginJsonVersion(repoDir, 'plugin-a', '1.2.0');
+      await addPluginJsonVersion(repoDir, 'plugin-b', '0.5.0');
+
+      runWithEnv(['add-plugin', repoDir, '--project'], projectDir, homeDir);
+
+      const lock = JSON.parse(await readFile(lockPath, 'utf-8'));
+      expect(lock.marketplaces['test-marketplace'].pluginVersions).toBeDefined();
+      delete lock.marketplaces['test-marketplace'].pluginVersions;
+      await writeFile(lockPath, JSON.stringify(lock), 'utf-8');
+
+      const update = runWithEnv(['update'], projectDir, homeDir);
+      expect(update.exitCode).toBe(0);
+
+      const lockAfter = JSON.parse(await readFile(lockPath, 'utf-8'));
+      expect(lockAfter.marketplaces['test-marketplace'].pluginVersions).toBeDefined();
+      expect(lockAfter.marketplaces['test-marketplace'].pluginVersions['plugin-a']).toBe('1.2.0');
+      expect(lockAfter.marketplaces['test-marketplace'].pluginVersions['plugin-b']).toBe('0.5.0');
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
 });
