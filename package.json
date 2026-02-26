@@ -1,6 +1,6 @@
 {
   "name": "agents-pkg",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Wrapper around skills CLI for Cursor and Claude with agents and commands config",
   "type": "module",
   "main": "dist/cli.js",
