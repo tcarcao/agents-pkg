@@ -22,6 +22,16 @@ export interface McpJson {
   mcpServers?: Record<string, McpServerConfig>;
 }
 
+/** Build MCP server key from plugin name and original server key (new format). */
+export function getMcpKey(pluginName: string, serverKey: string): string {
+  return pluginName + ':' + serverKey;
+}
+
+/** Legacy prefix for migration removal (agents-pkg:marketplace/plugin:). */
+export function getLegacyMcpPrefix(marketplaceName: string, pluginName: string): string {
+  return `agents-pkg:${marketplaceName}/${pluginName}:`;
+}
+
 async function readMcpJson(path: string): Promise<McpJson> {
   try {
     const raw = await readFile(path, 'utf-8');
@@ -76,6 +86,28 @@ export async function removeMcpServersByPrefix(
   let changed = false;
   for (const key of Object.keys(servers)) {
     if (key.startsWith(prefix)) {
+      delete servers[key];
+      changed = true;
+    }
+  }
+  if (changed) {
+    await writeMcpJson(cursorPath, { mcpServers: servers });
+  }
+}
+
+/**
+ * Remove exactly the given mcpServers keys. Missing keys are skipped (no error).
+ */
+export async function removeMcpServersByKeys(
+  cursorPath: string,
+  keys: string[]
+): Promise<void> {
+  if (keys.length === 0) return;
+  const existing = await readMcpJson(cursorPath);
+  const servers = existing.mcpServers ?? {};
+  let changed = false;
+  for (const key of keys) {
+    if (key in servers) {
       delete servers[key];
       changed = true;
     }

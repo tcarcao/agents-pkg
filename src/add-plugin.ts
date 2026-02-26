@@ -24,7 +24,7 @@ import { createSymlink } from './lib/symlink.js';
 import { copyAgentsFromPluginStore } from './lib/agents-copy.js';
 import { mergeHooksInto } from './lib/hooks.js';
 import type { HooksJson } from './lib/hooks.js';
-import { mergeMcpIntoCursor } from './lib/mcp.js';
+import { mergeMcpIntoCursor, removeMcpServersByPrefix, removeMcpServersByKeys, getMcpKey, getLegacyMcpPrefix } from './lib/mcp.js';
 import type { McpJson } from './lib/mcp.js';
 import { readLock, writeLock } from './lib/lock.js';
 import { fatal } from './lib/errors.js';
@@ -83,7 +83,7 @@ async function listRuleFiles(rulesDir: string): Promise<string[]> {
 
 /**
  * Copy plugin dir to store, then create symlinks for agents, commands, skills, rules; merge hooks and mcp.
- * Returns { done, hookEntries } so caller can store pluginHooks in lock.
+ * Returns { done, hookEntries, mcpKeysAdded } so caller can store pluginHooks and pluginMcpKeys in lock.
  */
 async function installPlugin(
   pluginStorePath: string,
@@ -94,10 +94,12 @@ async function installPlugin(
   cwd: string,
   global: boolean,
   marketplaceName: string,
-  pluginName: string
-): Promise<{ done: string[]; hookEntries: Array<{ hookName: string; command: string }> }> {
+  pluginName: string,
+  existingMcpKeysForPlugin?: string[]
+): Promise<{ done: string[]; hookEntries: Array<{ hookName: string; command: string }>; mcpKeysAdded: string[] }> {
   const done: string[] = [];
   let hookEntries: Array<{ hookName: string; command: string }> = [];
+  const mcpKeysAdded: string[] = [];
 
   // Agents are copied (not symlinked) so Cursor recognizes subagents
   const agentNames = await copyAgentsFromPluginStore(pluginStorePath, cursorAgentsDir);
@@ -148,7 +150,14 @@ async function installPlugin(
     const pluginMcp = JSON.parse(raw) as McpJson;
     if (pluginMcp.mcpServers && typeof pluginMcp.mcpServers === 'object' && Object.keys(pluginMcp.mcpServers).length > 0) {
       const cursorMcpPath = getCursorMcpPath(global, cwd);
-      const prefix = `agents-pkg:${marketplaceName}/${pluginName}:`;
+      await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(marketplaceName, pluginName));
+      if (existingMcpKeysForPlugin?.length) {
+        await removeMcpServersByKeys(cursorMcpPath, existingMcpKeysForPlugin);
+      }
+      const prefix = pluginName + ':';
+      for (const key of Object.keys(pluginMcp.mcpServers)) {
+        mcpKeysAdded.push(getMcpKey(pluginName, key));
+      }
       await mergeMcpIntoCursor(pluginMcp, cursorMcpPath, prefix);
       done.push('mcp');
     }
@@ -156,18 +165,18 @@ async function installPlugin(
     // no mcp or invalid
   }
 
-  return { done, hookEntries };
+  return { done, hookEntries, mcpKeysAdded };
 }
 
 /**
  * Install marketplace from an already-resolved source dir. Used by add-plugin and update.
- * Returns { installed, pluginHooks } so caller can write lock.
+ * Returns { installed, pluginHooks, pluginMcpKeys } so caller can write lock.
  */
 export async function installMarketplaceFromDir(
   manifest: MarketplaceManifest,
   sourceDir: string,
-  options: { pluginNames?: string[]; global?: boolean } = {}
-): Promise<{ installed: string[]; pluginHooks: Record<string, Array<{ hookName: string; command: string }>> }> {
+  options: { pluginNames?: string[]; global?: boolean; existingPluginMcpKeys?: Record<string, string[]> } = {}
+): Promise<{ installed: string[]; pluginHooks: Record<string, Array<{ hookName: string; command: string }>>; pluginMcpKeys: Record<string, string[]> }> {
   let pluginsToInstall = manifest.plugins;
   if (options.pluginNames && options.pluginNames.length > 0) {
     const requested = new Set(options.pluginNames);
@@ -191,6 +200,7 @@ export async function installMarketplaceFromDir(
 
   const installed: string[] = [];
   const pluginHooks: Record<string, Array<{ hookName: string; command: string }>> = {};
+  const pluginMcpKeys: Record<string, string[]> = {};
   for (const plugin of pluginsToInstall) {
     const pluginDir = join(sourceDir, plugin.source);
     const absPluginDir = resolve(pluginDir);
@@ -202,7 +212,7 @@ export async function installMarketplaceFromDir(
     await mkdir(storePath, { recursive: true });
     await cp(pluginDir, storePath, { recursive: true });
 
-    const { done, hookEntries } = await installPlugin(
+    const { done, hookEntries, mcpKeysAdded } = await installPlugin(
       storePath,
       cursorAgentsDir,
       cursorCommandsDir,
@@ -211,14 +221,16 @@ export async function installMarketplaceFromDir(
       cwd,
       global,
       manifest.name,
-      plugin.name
+      plugin.name,
+      options.existingPluginMcpKeys?.[plugin.name]
     );
     if (done.length > 0) {
       installed.push(plugin.name);
       if (hookEntries.length > 0) pluginHooks[plugin.name] = hookEntries;
+      if (mcpKeysAdded.length > 0) pluginMcpKeys[plugin.name] = mcpKeysAdded;
     }
   }
-  return { installed, pluginHooks };
+  return { installed, pluginHooks, pluginMcpKeys };
 }
 
 function parseAddPluginArgs(args: string[]): { source: string; pluginNames?: string[]; global: boolean } {
@@ -256,9 +268,12 @@ export async function runAddPlugin(args: string[]): Promise<void> {
   try {
     const manifest = await readMarketplaceManifest(sourceDir);
     const version = manifest.metadata?.version ?? '0.0.0';
-    const { installed, pluginHooks } = await installMarketplaceFromDir(manifest, sourceDir, {
+    const lock = await readLock();
+    const existingPluginMcpKeys = lock.marketplaces[manifest.name]?.pluginMcpKeys;
+    const { installed, pluginHooks, pluginMcpKeys } = await installMarketplaceFromDir(manifest, sourceDir, {
       pluginNames,
       global,
+      existingPluginMcpKeys,
     });
 
     if (installed.length === 0) {
@@ -278,7 +293,6 @@ export async function runAddPlugin(args: string[]): Promise<void> {
 
     console.log(`Installed marketplace "${manifest.name}" (v${version}): ${installed.join(', ')}.`);
 
-    const lock = await readLock();
     lock.marketplaces[manifest.name] = {
       name: manifest.name,
       source,
@@ -287,6 +301,7 @@ export async function runAddPlugin(args: string[]): Promise<void> {
       updatedAt: new Date().toISOString(),
       global,
       pluginHooks: Object.keys(pluginHooks).length > 0 ? pluginHooks : undefined,
+      pluginMcpKeys: Object.keys(pluginMcpKeys).length > 0 ? pluginMcpKeys : undefined,
       pluginVersions,
     };
     await writeLock(lock);

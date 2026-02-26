@@ -9,7 +9,7 @@ import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
 import { removeCopiedAgentsForPlugin } from './lib/agents-copy.js';
 import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorMcpPath } from './lib/paths.js';
 import { removeHookEntries } from './lib/hooks.js';
-import { removeMcpServersByPrefix } from './lib/mcp.js';
+import { removeMcpServersByPrefix, removeMcpServersByKeys, getLegacyMcpPrefix } from './lib/mcp.js';
 import { installMarketplaceFromDir } from './add-plugin.js';
 import { readLock, writeLock } from './lib/lock.js';
 
@@ -49,7 +49,10 @@ export async function runUpdate(): Promise<void> {
           if (entry.pluginHooks?.[pluginName]?.length) {
             await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
           }
-          await removeMcpServersByPrefix(cursorMcpPath, `agents-pkg:${name}/${pluginName}:`);
+          if (entry.pluginMcpKeys?.[pluginName]?.length) {
+            await removeMcpServersByKeys(cursorMcpPath, entry.pluginMcpKeys[pluginName]);
+          }
+          await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(name, pluginName));
         }
         for (const pluginName of entry.pluginNames ?? []) {
           const pluginStorePath = getPluginStorePath(name, pluginName);
@@ -61,10 +64,14 @@ export async function runUpdate(): Promise<void> {
         await removeSymlinksInDirPointingUnder(cursorRulesDir, storeRoot);
         await rm(storeRoot, { recursive: true, force: true }).catch(() => {});
 
-        const { installed, pluginHooks } = await installMarketplaceFromDir(manifest, sourceDir, { global });
+        const { installed, pluginHooks, pluginMcpKeys } = await installMarketplaceFromDir(manifest, sourceDir, {
+          global,
+          existingPluginMcpKeys: entry.pluginMcpKeys,
+        });
         entry.version = newVersion;
         entry.pluginNames = installed;
         entry.pluginHooks = Object.keys(pluginHooks).length > 0 ? pluginHooks : undefined;
+        entry.pluginMcpKeys = Object.keys(pluginMcpKeys).length > 0 ? pluginMcpKeys : undefined;
         const pluginVersions: Record<string, string> = {};
         for (const pluginName of installed) {
           const plugin = manifest.plugins.find((p) => p.name === pluginName);
@@ -97,7 +104,10 @@ export async function runUpdate(): Promise<void> {
           if (entry.pluginHooks?.[pluginName]?.length) {
             await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
           }
-          await removeMcpServersByPrefix(cursorMcpPath, `agents-pkg:${name}/${pluginName}:`);
+          if (entry.pluginMcpKeys?.[pluginName]?.length) {
+            await removeMcpServersByKeys(cursorMcpPath, entry.pluginMcpKeys[pluginName]);
+          }
+          await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(name, pluginName));
           await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
           await removeSymlinksInDirPointingUnder(cursorAgentsDir, pluginStorePath);
           await removeSymlinksInDirPointingUnder(cursorCommandsDir, pluginStorePath);
@@ -107,6 +117,7 @@ export async function runUpdate(): Promise<void> {
 
           entry.pluginNames = entry.pluginNames!.filter((n) => n !== pluginName);
           if (entry.pluginHooks) delete entry.pluginHooks[pluginName];
+          if (entry.pluginMcpKeys) delete entry.pluginMcpKeys[pluginName];
           if (entry.pluginVersions) delete entry.pluginVersions[pluginName];
           if (entry.pluginNames.length === 0) {
             delete lock.marketplaces[name];
@@ -131,7 +142,10 @@ export async function runUpdate(): Promise<void> {
           if (entry.pluginHooks?.[pluginName]?.length) {
             await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
           }
-          await removeMcpServersByPrefix(cursorMcpPath, `agents-pkg:${name}/${pluginName}:`);
+          if (entry.pluginMcpKeys?.[pluginName]?.length) {
+            await removeMcpServersByKeys(cursorMcpPath, entry.pluginMcpKeys[pluginName]);
+          }
+          await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(name, pluginName));
           await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
           await removeSymlinksInDirPointingUnder(cursorAgentsDir, pluginStorePath);
           await removeSymlinksInDirPointingUnder(cursorCommandsDir, pluginStorePath);
@@ -139,9 +153,10 @@ export async function runUpdate(): Promise<void> {
           await removeSymlinksInDirPointingUnder(cursorRulesDir, pluginStorePath);
           await rm(pluginStorePath, { recursive: true, force: true }).catch(() => {});
 
-          const { installed, pluginHooks } = await installMarketplaceFromDir(manifest, sourceDir, {
+          const { installed, pluginHooks, pluginMcpKeys: pluginMcpKeysReturned } = await installMarketplaceFromDir(manifest, sourceDir, {
             pluginNames: [pluginName],
             global,
+            existingPluginMcpKeys: entry.pluginMcpKeys,
           });
           if (installed.includes(pluginName)) {
             const plugin = manifest.plugins.find((p) => p.name === pluginName);
@@ -151,6 +166,10 @@ export async function runUpdate(): Promise<void> {
             if (pluginHooks[pluginName]?.length) {
               if (!entry.pluginHooks) entry.pluginHooks = {};
               entry.pluginHooks[pluginName] = pluginHooks[pluginName];
+            }
+            if (pluginMcpKeysReturned[pluginName]?.length) {
+              if (!entry.pluginMcpKeys) entry.pluginMcpKeys = {};
+              entry.pluginMcpKeys[pluginName] = pluginMcpKeysReturned[pluginName];
             }
           }
           entry.updatedAt = new Date().toISOString();

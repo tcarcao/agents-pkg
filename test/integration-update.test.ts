@@ -14,6 +14,7 @@ import {
 } from './integration-helpers.js';
 import { expect } from 'vitest';
 import { AGENTS_DIR, LOCK_FILE, MARKETPLACE_DIR } from '../src/lib/constants.js';
+import { getMcpKey } from '../src/lib/mcp.js';
 
 describe('integration update', () => {
   it('does not reinstall when version unchanged', async () => {
@@ -61,7 +62,7 @@ describe('integration update', () => {
       const hooks = JSON.parse(await readFile(hooksPath, 'utf-8'));
       expect(hooks.hooks['pre-commit']).toContainEqual({ command: '/repo/plugin-a/pre-commit' });
       const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
-      expect(mcp.mcpServers['agents-pkg:test-marketplace/plugin-a:github']).toBeDefined();
+      expect(mcp.mcpServers[getMcpKey('plugin-a', 'github')]).toBeDefined();
     } finally {
       await rm(homeDir, { recursive: true, force: true });
       await rm(projectDir, { recursive: true, force: true });

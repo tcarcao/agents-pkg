@@ -14,6 +14,7 @@ import {
 } from './integration-helpers.js';
 import { expect } from 'vitest';
 import { AGENTS_DIR, LOCK_FILE, MARKETPLACE_DIR } from '../src/lib/constants.js';
+import { getMcpKey } from '../src/lib/mcp.js';
 
 describe('integration add-plugin', () => {
   it('installs marketplace from local path and list shows it', async () => {
@@ -187,6 +188,8 @@ describe('integration add-plugin', () => {
       expect(lock.marketplaces['test-marketplace'].pluginHooks['plugin-a']).toEqual([
         { hookName: 'pre-commit', command: '/repo/plugin-a/pre-commit' },
       ]);
+      expect(lock.marketplaces['test-marketplace'].pluginMcpKeys).toBeDefined();
+      expect(lock.marketplaces['test-marketplace'].pluginMcpKeys['plugin-a']).toEqual(['plugin-a:github']);
 
       const hooks = JSON.parse(await readFile(hooksPath, 'utf-8'));
       expect(hooks.hooks['pre-commit']).toContainEqual({
@@ -194,7 +197,7 @@ describe('integration add-plugin', () => {
       });
 
       const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
-      const prefixedKey = 'agents-pkg:test-marketplace/plugin-a:github';
+      const prefixedKey = getMcpKey('plugin-a', 'github');
       expect(mcp.mcpServers[prefixedKey]).toEqual({
         command: 'npx',
         args: ['-y', 'github-mcp'],

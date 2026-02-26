@@ -9,7 +9,7 @@ import { getPluginStorePath } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
 import { removeCopiedAgentsForPlugin } from './lib/agents-copy.js';
 import { removeHookEntries } from './lib/hooks.js';
-import { removeMcpServersByPrefix } from './lib/mcp.js';
+import { removeMcpServersByPrefix, removeMcpServersByKeys, getLegacyMcpPrefix } from './lib/mcp.js';
 import { readLock, writeLock } from './lib/lock.js';
 import { fatal } from './lib/errors.js';
 
@@ -41,7 +41,10 @@ export async function runDelPlugin(args: string[]): Promise<void> {
     await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
   }
   const cursorMcpPath = getCursorMcpPath(global, cwd);
-  await removeMcpServersByPrefix(cursorMcpPath, `agents-pkg:${marketplaceName}/${pluginName}:`);
+  if (entry.pluginMcpKeys?.[pluginName]?.length) {
+    await removeMcpServersByKeys(cursorMcpPath, entry.pluginMcpKeys[pluginName]);
+  }
+  await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(marketplaceName, pluginName));
 
   await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
   await removeSymlinksInDirPointingUnder(cursorAgentsDir, pluginStorePath);
@@ -57,6 +60,7 @@ export async function runDelPlugin(args: string[]): Promise<void> {
 
   entry.pluginNames = entry.pluginNames.filter((n) => n !== pluginName);
   if (entry.pluginHooks) delete entry.pluginHooks[pluginName];
+  if (entry.pluginMcpKeys) delete entry.pluginMcpKeys[pluginName];
   if (entry.pluginVersions) delete entry.pluginVersions[pluginName];
   if (entry.pluginNames.length === 0) {
     delete lock.marketplaces[marketplaceName];

@@ -61,7 +61,7 @@ src/
     ├── lock.ts            # readLock, writeLock, getLockPath, getHome
     ├── paths.ts           # getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorHooksPath, getCursorMcpPath
     ├── hooks.ts           # mergeHooksInto, removeHookEntries (merge/remove hooks; scope project or global)
-    ├── mcp.ts             # mergeMcpIntoCursor, removeMcpServersByPrefix (merge/remove MCP with prefixed keys)
+    ├── mcp.ts             # getMcpKey, getLegacyMcpPrefix, mergeMcpIntoCursor, removeMcpServersByPrefix, removeMcpServersByKeys (merge/remove MCP; keys are <plugin>:<serverKey>, lock stores pluginMcpKeys)
     └── errors.ts          # fatal(message)
 ```
 
@@ -69,24 +69,25 @@ src/
 
 - **Store:** `~/.agents/agents-pkg/marketplace/<marketplace-name>/<plugin-name>/` — copied from source (e.g. `./global`).
 - **Agents:** Plugin `agents/*.md` are **copied** into `.cursor/agents` (so Cursor recognizes subagents). On uninstall, those files are removed.
-- **Symlinks:** Plugin `commands/*.md`, `skills/<dir>/`, and `rules/*.md` / `rules/*.mdc` are symlinked into project `.cursor/commands`, global `~/.cursor/skills`, and project `.cursor/rules`. **Hooks** from `hooks/hooks.json` are **merged** into project or global `.cursor/hooks.json` (per `--project`/`--global`); the merged entries are recorded in the lock (`pluginHooks`) so they can be removed on uninstall. **MCP** from `mcp/mcp.json` is **merged** into `.cursor/mcp.json` under prefixed keys (`agents-pkg:<marketplace>/<plugin>:<key>`); removal on uninstall is by prefix (no lock field).
+- **Symlinks:** Plugin `commands/*.md`, `skills/<dir>/`, and `rules/*.md` / `rules/*.mdc` are symlinked into project `.cursor/commands`, global `~/.cursor/skills`, and project `.cursor/rules`. **Hooks** from `hooks/hooks.json` are **merged** into project or global `.cursor/hooks.json` (per `--project`/`--global`); the merged entries are recorded in the lock (`pluginHooks`) so they can be removed on uninstall. **MCP** from `mcp/mcp.json` is **merged** into `.cursor/mcp.json` under keys `<plugin>:<serverKey>` (plugin name only, to stay under Cursor’s 60-char limit); the keys we add are stored in the lock (`pluginMcpKeys` per plugin) for removal on uninstall. Legacy-format keys (`agents-pkg:<marketplace>/<plugin>:<key>`) are also removed on uninstall for migration.
 - **Sources:** Local paths and GitLab/GitHub (full URL or shorthand). No API dependency for update—clone and read file.
 
 ## Lock file (v1)
 
-- `version: 1`, `marketplaces: { "<name>": { name, source, version, pluginNames, updatedAt, global?, pluginHooks?, pluginVersions? } }`.
+- `version: 1`, `marketplaces: { "<name>": { name, source, version, pluginNames, updatedAt, global?, pluginHooks?, pluginVersions?, pluginMcpKeys? } }`.
 - `pluginHooks` is optional: `Record<pluginName, Array<{ hookName, command }>>` for hook entries we merged (used for removal on del-plugin/del-marketplace/update).
 - `pluginVersions` is optional: `Record<pluginName, string>` for last-installed plugin version (used for update diff; when marketplace version is unchanged, only plugins whose version changed are reinstalled).
+- `pluginMcpKeys` is optional: `Record<pluginName, string[]>` for MCP server keys we added (e.g. `['plugin-a:github']`); used for removal on del-plugin/del-marketplace/update.
 - Missing or invalid lock returns empty (version 1, marketplaces empty).
 
 ## Key integration points
 
 | Feature | Implementation |
 | ------- | -------------- |
-| add-plugin | `src/add-plugin.ts`: resolveSourceToDir → readMarketplaceManifest(dir) → copy plugin dirs to store → copy agents (agents-copy), createSymlink for commands/skills/rules, mergeHooksInto (return hook entries), mergeMcpIntoCursor (prefixed keys) → writeLock with pluginHooks |
+| add-plugin | `src/add-plugin.ts`: resolveSourceToDir → readMarketplaceManifest(dir) → copy plugin dirs to store → copy agents (agents-copy), createSymlink for commands/skills/rules, mergeHooksInto (return hook entries), mergeMcpIntoCursor with keys `<plugin>:<serverKey>` (return pluginMcpKeys) → writeLock with pluginHooks and pluginMcpKeys |
 | list | `src/list.ts`: readLock, print each marketplace (name, version, scope, source, plugin names) |
-| del-plugin | `src/del-plugin.ts`: removeHookEntries for plugin, removeMcpServersByPrefix, removeCopiedAgentsForPlugin, remove plugin symlinks and store; update lock (pluginNames, pluginHooks); remove marketplace entry if last plugin |
-| del-marketplace | `src/del-marketplace.ts`: removeHookEntries and removeMcpServersByPrefix per plugin, removeCopiedAgentsForPlugin per plugin, removeSymlinksInDirPointingUnder for agents/commands/skills/rules; rm store; update lock |
+| del-plugin | `src/del-plugin.ts`: removeHookEntries for plugin, removeMcpServersByKeys(pluginMcpKeys[plugin]), removeMcpServersByPrefix(legacy), removeCopiedAgentsForPlugin, remove plugin symlinks and store; update lock (pluginNames, pluginHooks, pluginMcpKeys); remove marketplace entry if last plugin |
+| del-marketplace | `src/del-marketplace.ts`: removeHookEntries and removeMcpServersByKeys/removeMcpServersByPrefix per plugin, removeCopiedAgentsForPlugin per plugin, removeSymlinksInDirPointingUnder for agents/commands/skills/rules; rm store; update lock |
 | update | `src/update.ts`: for each lock.marketplaces, resolve source, read manifest. If **marketplace version** changed → full teardown and reinstall all, set version and pluginVersions. If **unchanged** and pluginVersions present → remove plugins no longer in manifest; reinstall only plugins whose **plugin version** changed (single-plugin teardown + installMarketplaceFromDir with pluginNames). Write lock when any change (full reinstall, plugin removed, or plugin reinstalled). |
 | Source resolution | `lib/source-dir.ts`: resolveSourceToDir (local path, git URL, owner/repo, gitlab.com/owner/repo) |
 

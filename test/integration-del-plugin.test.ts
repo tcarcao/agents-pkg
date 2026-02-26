@@ -13,6 +13,9 @@ import {
   createTempDir,
 } from './integration-helpers.js';
 import { expect } from 'vitest';
+import { getMcpKey } from '../src/lib/mcp.js';
+import { AGENTS_DIR, LOCK_FILE } from '../src/lib/constants.js';
+import { mkdir, writeFile } from 'fs/promises';
 
 describe('integration del-plugin', () => {
   it('removes one plugin; list shows remaining plugin', async () => {
@@ -114,7 +117,7 @@ describe('integration del-plugin', () => {
     try {
       runWithEnv(['add-plugin', repoDir, '--project'], projectDir, homeDir);
       expect((JSON.parse(await readFile(hooksPath, 'utf-8'))).hooks['pre-commit']).toBeDefined();
-      expect((JSON.parse(await readFile(mcpPath, 'utf-8'))).mcpServers['agents-pkg:test-marketplace/plugin-a:github']).toBeDefined();
+      expect((JSON.parse(await readFile(mcpPath, 'utf-8'))).mcpServers[getMcpKey('plugin-a', 'github')]).toBeDefined();
 
       const del = runWithEnv(
         ['del-plugin', 'test-marketplace', 'plugin-a'],
@@ -126,7 +129,45 @@ describe('integration del-plugin', () => {
       const hooks = JSON.parse(await readFile(hooksPath, 'utf-8'));
       expect(hooks.hooks['pre-commit']).toBeUndefined();
       const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
-      expect(mcp.mcpServers['agents-pkg:test-marketplace/plugin-a:github']).toBeUndefined();
+      expect(mcp.mcpServers[getMcpKey('plugin-a', 'github')]).toBeUndefined();
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('removes legacy-format MCP key when lock has no pluginMcpKeys (migration)', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepoWithHooksAndMcp();
+    const lockPath = join(homeDir, AGENTS_DIR, LOCK_FILE);
+    const mcpPath = join(projectDir, '.cursor', 'mcp.json');
+    try {
+      runWithEnv(['add-plugin', repoDir, '--project'], projectDir, homeDir);
+      const lock = JSON.parse(await readFile(lockPath, 'utf-8'));
+      const legacyKey = 'agents-pkg:test-marketplace/plugin-a:github';
+      expect(lock.marketplaces['test-marketplace'].pluginMcpKeys?.['plugin-a']).toEqual(['plugin-a:github']);
+      const mcpBefore = JSON.parse(await readFile(mcpPath, 'utf-8'));
+      expect(mcpBefore.mcpServers[getMcpKey('plugin-a', 'github')]).toBeDefined();
+
+      delete lock.marketplaces['test-marketplace'].pluginMcpKeys;
+      await writeFile(lockPath, JSON.stringify(lock), 'utf-8');
+      await mkdir(join(projectDir, '.cursor'), { recursive: true });
+      const mcpWithLegacyOnly: Record<string, unknown> = {
+        mcpServers: { [legacyKey]: { command: 'npx', args: ['-y', 'github-mcp'] } },
+      };
+      await writeFile(mcpPath, JSON.stringify(mcpWithLegacyOnly), 'utf-8');
+
+      const del = runWithEnv(
+        ['del-plugin', 'test-marketplace', 'plugin-a'],
+        projectDir,
+        homeDir
+      );
+      expect(del.exitCode).toBe(0);
+
+      const mcpAfter = JSON.parse(await readFile(mcpPath, 'utf-8'));
+      expect(mcpAfter.mcpServers[legacyKey]).toBeUndefined();
     } finally {
       await rm(homeDir, { recursive: true, force: true });
       await rm(projectDir, { recursive: true, force: true });
