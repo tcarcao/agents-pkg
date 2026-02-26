@@ -17,7 +17,8 @@
     "start": "node bin/agents-pkg.mjs",
     "pretest": "pnpm run build",
     "test": "vitest run",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "release": "./scripts/release.sh"
   },
   "keywords": [
     "cursor",
