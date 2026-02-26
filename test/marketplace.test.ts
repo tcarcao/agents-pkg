@@ -10,6 +10,8 @@ import {
   readMarketplaceManifest,
   getMarketplaceStorePath,
   getPluginStorePath,
+  readPluginVersion,
+  getPluginVersionFromSource,
 } from '../src/lib/marketplace.js';
 import { expect } from 'vitest';
 
@@ -40,6 +42,29 @@ describe('marketplace', () => {
         expect(out.plugins[0].name).toBe('ai-kit-global');
         expect(out.plugins[0].source).toBe('./global');
         expect(out.plugins[1].name).toBe('ai-kit-backend');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('parses optional version on plugin entries', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-mp-'));
+      try {
+        await mkdir(join(dir, '.cursor-plugin'), { recursive: true });
+        await writeFile(
+          join(dir, '.cursor-plugin', 'marketplace.json'),
+          JSON.stringify({
+            name: 'x',
+            plugins: [
+              { name: 'p1', source: './p1', version: '1.0.0' },
+              { name: 'p2', source: './p2' },
+            ],
+          }),
+          'utf-8'
+        );
+        const out = await readMarketplaceManifest(dir);
+        expect(out.plugins[0].version).toBe('1.0.0');
+        expect(out.plugins[1].version).toBeUndefined();
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
@@ -81,6 +106,78 @@ describe('marketplace', () => {
         await expect(readMarketplaceManifest(dir)).rejects.toThrow(/plugins/);
       } finally {
         await rm(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('readPluginVersion', () => {
+    it('returns 0.0.0 when plugin.json is missing', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-plugin-'));
+      try {
+        const version = await readPluginVersion(dir);
+        expect(version).toBe('0.0.0');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns version when plugin.json exists with version field', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-plugin-'));
+      try {
+        await writeFile(join(dir, 'plugin.json'), JSON.stringify({ version: '1.2.3' }), 'utf-8');
+        const version = await readPluginVersion(dir);
+        expect(version).toBe('1.2.3');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns 0.0.0 when plugin.json is invalid or empty', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'agents-pkg-plugin-'));
+      try {
+        await writeFile(join(dir, 'plugin.json'), 'not json', 'utf-8');
+        const version = await readPluginVersion(dir);
+        expect(version).toBe('0.0.0');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('getPluginVersionFromSource', () => {
+    it('returns plugin.version when present on manifest plugin', async () => {
+      const sourceDir = await mkdtemp(join(tmpdir(), 'agents-pkg-src-'));
+      try {
+        const plugin = { name: 'p', source: './p', version: '2.0.0' as string };
+        const version = await getPluginVersionFromSource(plugin, sourceDir);
+        expect(version).toBe('2.0.0');
+      } finally {
+        await rm(sourceDir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns readPluginVersion result when plugin has no version', async () => {
+      const sourceDir = await mkdtemp(join(tmpdir(), 'agents-pkg-src-'));
+      await mkdir(join(sourceDir, 'p'), { recursive: true });
+      await writeFile(join(sourceDir, 'p', 'plugin.json'), JSON.stringify({ version: '3.0.0' }), 'utf-8');
+      try {
+        const plugin = { name: 'p', source: './p' };
+        const version = await getPluginVersionFromSource(plugin, sourceDir);
+        expect(version).toBe('3.0.0');
+      } finally {
+        await rm(sourceDir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns 0.0.0 when plugin has no version and no plugin.json', async () => {
+      const sourceDir = await mkdtemp(join(tmpdir(), 'agents-pkg-src-'));
+      await mkdir(join(sourceDir, 'p'), { recursive: true });
+      try {
+        const plugin = { name: 'p', source: './p' };
+        const version = await getPluginVersionFromSource(plugin, sourceDir);
+        expect(version).toBe('0.0.0');
+      } finally {
+        await rm(sourceDir, { recursive: true, force: true });
       }
     });
   });

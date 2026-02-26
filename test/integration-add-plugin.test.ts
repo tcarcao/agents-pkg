@@ -154,6 +154,11 @@ describe('integration add-plugin', () => {
       expect(lock.marketplaces['test-marketplace']).toBeDefined();
       expect(lock.marketplaces['test-marketplace'].pluginNames).toContain('plugin-a');
       expect(lock.marketplaces['test-marketplace'].pluginNames).toContain('plugin-b');
+      expect(lock.marketplaces['test-marketplace'].pluginVersions).toBeDefined();
+      expect(lock.marketplaces['test-marketplace'].pluginVersions['plugin-a']).toBeDefined();
+      expect(lock.marketplaces['test-marketplace'].pluginVersions['plugin-b']).toBeDefined();
+      expect(typeof lock.marketplaces['test-marketplace'].pluginVersions['plugin-a']).toBe('string');
+      expect(typeof lock.marketplaces['test-marketplace'].pluginVersions['plugin-b']).toBe('string');
     } finally {
       await rm(homeDir, { recursive: true, force: true });
       await rm(projectDir, { recursive: true, force: true });

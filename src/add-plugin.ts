@@ -9,6 +9,7 @@ import { resolveSourceToDir } from './lib/source-dir.js';
 import {
   readMarketplaceManifest,
   getPluginStorePath,
+  getPluginVersionFromSource,
   type MarketplaceManifest,
 } from './lib/marketplace.js';
 import {
@@ -265,6 +266,16 @@ export async function runAddPlugin(args: string[]): Promise<void> {
       return;
     }
 
+    const pluginVersions: Record<string, string> = {};
+    for (const pluginName of installed) {
+      const plugin = manifest.plugins.find((p) => p.name === pluginName);
+      if (plugin) {
+        pluginVersions[pluginName] = await getPluginVersionFromSource(plugin, sourceDir);
+      } else {
+        pluginVersions[pluginName] = '0.0.0';
+      }
+    }
+
     console.log(`Installed marketplace "${manifest.name}" (v${version}): ${installed.join(', ')}.`);
 
     const lock = await readLock();
@@ -276,6 +287,7 @@ export async function runAddPlugin(args: string[]): Promise<void> {
       updatedAt: new Date().toISOString(),
       global,
       pluginHooks: Object.keys(pluginHooks).length > 0 ? pluginHooks : undefined,
+      pluginVersions,
     };
     await writeLock(lock);
   } finally {

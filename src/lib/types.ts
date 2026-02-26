@@ -13,6 +13,8 @@ export interface MarketplaceEntry {
   global?: boolean;
   /** Hook entries we merged per plugin (for removal on uninstall). */
   pluginHooks?: Record<string, Array<{ hookName: string; command: string }>>;
+  /** Last-installed version per plugin (for update diff). */
+  pluginVersions?: Record<string, string>;
 }
 
 export interface LockFile {

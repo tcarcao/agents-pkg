@@ -5,12 +5,13 @@
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { getHome } from './lock.js';
-import { AGENTS_DIR, MARKETPLACE_DIR, MARKETPLACE_JSON } from './constants.js';
+import { AGENTS_DIR, MARKETPLACE_DIR, MARKETPLACE_JSON, PLUGIN_JSON } from './constants.js';
 
 export interface MarketplacePlugin {
   name: string;
   source: string;
   description?: string;
+  version?: string;
 }
 
 export interface MarketplaceManifest {
@@ -50,6 +51,7 @@ export async function readMarketplaceManifest(sourceDir: string): Promise<Market
       name: o.name.trim(),
       source: o.source.trim(),
       description: o.description != null ? String(o.description) : undefined,
+      version: typeof o.version === 'string' && o.version.trim() ? o.version.trim() : undefined,
     });
   }
   return {
@@ -72,4 +74,36 @@ export function getMarketplaceStorePath(name: string): string {
  */
 export function getPluginStorePath(marketplaceName: string, pluginName: string): string {
   return join(getMarketplaceStorePath(marketplaceName), pluginName);
+}
+
+/**
+ * Read plugin version from optional plugin.json at plugin dir root.
+ * Returns top-level "version" or '0.0.0' if missing/invalid.
+ */
+export async function readPluginVersion(pluginDir: string): Promise<string> {
+  try {
+    const path = join(pluginDir, PLUGIN_JSON);
+    const raw = await readFile(path, 'utf-8');
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed.version === 'string' && parsed.version.trim()) {
+      return parsed.version.trim();
+    }
+  } catch {
+    // missing or invalid
+  }
+  return '0.0.0';
+}
+
+/**
+ * Resolved version for a plugin: manifest plugin.version ?? readPluginVersion(plugin dir) ?? '0.0.0'.
+ */
+export async function getPluginVersionFromSource(
+  plugin: MarketplacePlugin,
+  sourceDir: string
+): Promise<string> {
+  if (plugin.version != null && plugin.version.trim() !== '') {
+    return plugin.version.trim();
+  }
+  const pluginDir = join(sourceDir, plugin.source);
+  return readPluginVersion(pluginDir);
 }

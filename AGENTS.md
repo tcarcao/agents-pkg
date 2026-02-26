@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents working on the `agents-pkg` CLI 
 
 ## Project Overview
 
-`agents-pkg` is a **Cursor-only** marketplace installer. It installs plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/`. **Agents** are **copied** into `.cursor/agents` (so Cursor recognizes subagents); **commands**, **skills**, and **rules** are **symlinked** into `.cursor/commands`, `~/.cursor/skills`, `.cursor/rules`. **Hooks** from `hooks/hooks.json` are **merged** into `.cursor/hooks.json` (project or global per `--project`/`--global`); **MCP** from `mcp/mcp.json` is **merged** into `.cursor/mcp.json` with prefixed keys. On uninstall or update, hook entries and MCP keys for that plugin are removed. Use `agents-pkg update` to re-fetch each installed marketplace and reinstall when the manifest version changed.
+`agents-pkg` is a **Cursor-only** marketplace installer. It installs plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/`. **Agents** are **copied** into `.cursor/agents` (so Cursor recognizes subagents); **commands**, **skills**, and **rules** are **symlinked** into `.cursor/commands`, `~/.cursor/skills`, `.cursor/rules`. **Hooks** from `hooks/hooks.json` are **merged** into `.cursor/hooks.json` (project or global per `--project`/`--global`); **MCP** from `mcp/mcp.json` is **merged** into `.cursor/mcp.json` with prefixed keys. On uninstall or update, hook entries and MCP keys for that plugin are removed. Use `agents-pkg update` to re-fetch each installed marketplace and reinstall when the **marketplace** version changed, or reinstall only plugins whose **plugin** version changed when the marketplace version is unchanged.
 
 ## Commands
 
@@ -15,7 +15,7 @@ This file provides guidance to AI coding agents working on the `agents-pkg` CLI 
 | `agents-pkg list` | List installed marketplaces and their plugins (name, version, scope, source, plugin names) |
 | `agents-pkg del-plugin <marketplace> <plugin>` | Remove one plugin from a marketplace (remove its agent copies and symlinks, delete its store dir, update lock; remove marketplace entry if last plugin) |
 | `agents-pkg del-marketplace <name>` | Uninstall entire marketplace by name (remove agent copies and symlinks, delete store, update lock) |
-| `agents-pkg update` | For each installed marketplace, re-fetch source, read `.cursor-plugin/marketplace.json`, reinstall if version changed |
+| `agents-pkg update` | For each installed marketplace, re-fetch source, read manifest. If **marketplace version** changed → full reinstall; if unchanged → uninstall plugins removed from manifest, reinstall only plugins whose **plugin version** changed. |
 
 ## Marketplace format
 
@@ -37,8 +37,9 @@ The marketplace manifest lives **inside the source** at **`.cursor-plugin/market
 ```
 
 - **name** (required): Marketplace name; used as lock key and store parent.
-- **metadata.version**: Used for update check; reinstall when it changes.
-- **plugins**: Array of `{ name, source, description? }`. `source` is relative to the repo root (e.g. `./global`).
+- **metadata.version**: Marketplace version; when it changes, a full reinstall of the marketplace is performed.
+- **plugins**: Array of `{ name, source, description?, version? }`. `source` is relative to the repo root (e.g. `./global`). Optional **version** per plugin is used for update diff (manifest wins over plugin dir `plugin.json`).
+- **Plugin dir (optional):** A `plugin.json` file at the root of a plugin directory with a top-level `version` field (e.g. `{ "version": "1.0.0" }`) is used when the manifest does not set a version for that plugin.
 
 ## Architecture
 
@@ -51,9 +52,9 @@ src/
 ├── del-plugin.ts          # runDelPlugin(); remove one plugin from a marketplace
 ├── update.ts              # runUpdate(); per marketplace resolve source, read manifest, reinstall if version changed
 └── lib/
-    ├── constants.ts       # AGENTS_DIR, LOCK_FILE, MARKETPLACE_DIR, MARKETPLACE_JSON, REPO_* dirs
+    ├── constants.ts       # AGENTS_DIR, LOCK_FILE, MARKETPLACE_DIR, MARKETPLACE_JSON, PLUGIN_JSON, REPO_* dirs
     ├── types.ts           # LockFile, MarketplaceEntry
-    ├── marketplace.ts     # readMarketplaceManifest(sourceDir), getMarketplaceStorePath, getPluginStorePath
+    ├── marketplace.ts     # readMarketplaceManifest, getMarketplaceStorePath, getPluginStorePath, readPluginVersion, getPluginVersionFromSource
     ├── agents-copy.ts     # copyAgentsFromPluginStore, removeCopiedAgentsForPlugin (agents copied so Cursor sees subagents)
     ├── symlink.ts         # createSymlink, removeSymlinksInDirPointingUnder
     ├── source-dir.ts      # resolveSourceToDir (clone or resolve path; local + GitLab + GitHub)
@@ -73,8 +74,9 @@ src/
 
 ## Lock file (v1)
 
-- `version: 1`, `marketplaces: { "<name>": { name, source, version, pluginNames, updatedAt, global?, pluginHooks? } }`.
+- `version: 1`, `marketplaces: { "<name>": { name, source, version, pluginNames, updatedAt, global?, pluginHooks?, pluginVersions? } }`.
 - `pluginHooks` is optional: `Record<pluginName, Array<{ hookName, command }>>` for hook entries we merged (used for removal on del-plugin/del-marketplace/update).
+- `pluginVersions` is optional: `Record<pluginName, string>` for last-installed plugin version (used for update diff; when marketplace version is unchanged, only plugins whose version changed are reinstalled).
 - Missing or invalid lock returns empty (version 1, marketplaces empty).
 
 ## Key integration points
@@ -85,7 +87,7 @@ src/
 | list | `src/list.ts`: readLock, print each marketplace (name, version, scope, source, plugin names) |
 | del-plugin | `src/del-plugin.ts`: removeHookEntries for plugin, removeMcpServersByPrefix, removeCopiedAgentsForPlugin, remove plugin symlinks and store; update lock (pluginNames, pluginHooks); remove marketplace entry if last plugin |
 | del-marketplace | `src/del-marketplace.ts`: removeHookEntries and removeMcpServersByPrefix per plugin, removeCopiedAgentsForPlugin per plugin, removeSymlinksInDirPointingUnder for agents/commands/skills/rules; rm store; update lock |
-| update | `src/update.ts`: for each lock.marketplaces, resolve source to dir, readMarketplaceManifest(dir), if version changed then removeHookEntries and removeMcpServersByPrefix per plugin, removeCopiedAgentsForPlugin, remove symlinks, rm store, installMarketplaceFromDir (refreshes pluginHooks), writeLock |
+| update | `src/update.ts`: for each lock.marketplaces, resolve source, read manifest. If **marketplace version** changed → full teardown and reinstall all, set version and pluginVersions. If **unchanged** and pluginVersions present → remove plugins no longer in manifest; reinstall only plugins whose **plugin version** changed (single-plugin teardown + installMarketplaceFromDir with pluginNames). Write lock when any change (full reinstall, plugin removed, or plugin reinstalled). |
 | Source resolution | `lib/source-dir.ts`: resolveSourceToDir (local path, git URL, owner/repo, gitlab.com/owner/repo) |
 
 ## Development

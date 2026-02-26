@@ -60,6 +60,25 @@ export async function createFakeMarketplaceRepoWithHooksAndMcp(): Promise<string
   return dir;
 }
 
+/** Add optional plugin.json with version to a plugin dir (for update tests that need per-plugin version). */
+export async function addPluginJsonVersion(repoDir: string, pluginName: string, version: string): Promise<void> {
+  await writeFile(
+    join(repoDir, pluginName, 'plugin.json'),
+    JSON.stringify({ version }),
+    'utf-8'
+  );
+}
+
+/** Set version on a plugin entry in the marketplace manifest (for update tests). */
+export async function setPluginVersionInManifest(repoDir: string, pluginName: string, version: string): Promise<void> {
+  const { readFile } = await import('fs/promises');
+  const path = join(repoDir, '.cursor-plugin', 'marketplace.json');
+  const manifest = JSON.parse(await readFile(path, 'utf-8'));
+  const plugin = manifest.plugins?.find((p: { name: string }) => p.name === pluginName);
+  if (plugin) plugin.version = version;
+  await writeFile(path, JSON.stringify(manifest), 'utf-8');
+}
+
 export function runWithEnv(args: string[], cwd: string, home: string) {
   return runCli(args, cwd, { AGENTS_PKG_HOME: home });
 }

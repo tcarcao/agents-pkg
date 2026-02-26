@@ -57,6 +57,7 @@ export async function runDelPlugin(args: string[]): Promise<void> {
 
   entry.pluginNames = entry.pluginNames.filter((n) => n !== pluginName);
   if (entry.pluginHooks) delete entry.pluginHooks[pluginName];
+  if (entry.pluginVersions) delete entry.pluginVersions[pluginName];
   if (entry.pluginNames.length === 0) {
     delete lock.marketplaces[marketplaceName];
   }

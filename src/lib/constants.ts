@@ -13,6 +13,9 @@ export const MARKETPLACE_DIR = 'agents-pkg/marketplace';
 /** Path relative to resolved source dir: .cursor-plugin/marketplace.json */
 export const MARKETPLACE_JSON = '.cursor-plugin/marketplace.json';
 
+/** Plugin manifest at plugin root: plugin.json with top-level version */
+export const PLUGIN_JSON = 'plugin.json';
+
 /** Plugin layout inside each plugin dir (agents, commands, skills, hooks, rules) */
 export const REPO_SKILLS_DIR = 'skills';
 export const REPO_AGENTS_DIR = 'agents';
