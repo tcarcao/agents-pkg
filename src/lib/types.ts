@@ -11,6 +11,8 @@ export interface MarketplaceEntry {
   updatedAt: string;
   /** If true (default), symlinks go to ~/.cursor/*; if false, to project .cursor/*. */
   global?: boolean;
+  /** Hook entries we merged per plugin (for removal on uninstall). */
+  pluginHooks?: Record<string, Array<{ hookName: string; command: string }>>;
 }
 
 export interface LockFile {

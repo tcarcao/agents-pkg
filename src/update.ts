@@ -7,7 +7,9 @@ import { resolveSourceToDir } from './lib/source-dir.js';
 import { readMarketplaceManifest, getMarketplaceStorePath, getPluginStorePath } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
 import { removeCopiedAgentsForPlugin } from './lib/agents-copy.js';
-import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
+import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorMcpPath } from './lib/paths.js';
+import { removeHookEntries } from './lib/hooks.js';
+import { removeMcpServersByPrefix } from './lib/mcp.js';
 import { installMarketplaceFromDir } from './add-plugin.js';
 import { readLock, writeLock } from './lib/lock.js';
 
@@ -41,6 +43,13 @@ export async function runUpdate(): Promise<void> {
 
       console.log(`Updating marketplace ${name} (${entry.version} -> ${newVersion})...`);
       const storeRoot = getMarketplaceStorePath(name);
+      const cursorMcpPath = getCursorMcpPath(global, cwd);
+      for (const pluginName of entry.pluginNames ?? []) {
+        if (entry.pluginHooks?.[pluginName]?.length) {
+          await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
+        }
+        await removeMcpServersByPrefix(cursorMcpPath, `agents-pkg:${name}/${pluginName}:`);
+      }
       for (const pluginName of entry.pluginNames ?? []) {
         const pluginStorePath = getPluginStorePath(name, pluginName);
         await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
@@ -51,9 +60,10 @@ export async function runUpdate(): Promise<void> {
       await removeSymlinksInDirPointingUnder(cursorRulesDir, storeRoot);
       await rm(storeRoot, { recursive: true, force: true }).catch(() => {});
 
-      const installed = await installMarketplaceFromDir(manifest, sourceDir, { global });
+      const { installed, pluginHooks } = await installMarketplaceFromDir(manifest, sourceDir, { global });
       entry.version = newVersion;
       entry.pluginNames = installed;
+      entry.pluginHooks = Object.keys(pluginHooks).length > 0 ? pluginHooks : undefined;
       entry.updatedAt = new Date().toISOString();
       updated++;
     } catch (err) {

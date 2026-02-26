@@ -3,9 +3,11 @@
  */
 
 import { describe, it } from 'vitest';
-import { rm } from 'fs/promises';
+import { rm, readFile } from 'fs/promises';
+import { join } from 'path';
 import {
   createFakeMarketplaceRepo,
+  createFakeMarketplaceRepoWithHooksAndMcp,
   runWithEnv,
   listOutput,
   createTempDir,
@@ -96,6 +98,35 @@ describe('integration del-plugin', () => {
       expect(del.exitCode).toBe(1);
       expect(del.stdout + del.stderr).toContain('not installed');
       expect(del.stdout + del.stderr).toContain('plugin-a');
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('removes hook entries and MCP keys for the removed plugin', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepoWithHooksAndMcp();
+    const hooksPath = join(projectDir, '.cursor', 'hooks.json');
+    const mcpPath = join(projectDir, '.cursor', 'mcp.json');
+    try {
+      runWithEnv(['add-plugin', repoDir, '--project'], projectDir, homeDir);
+      expect((JSON.parse(await readFile(hooksPath, 'utf-8'))).hooks['pre-commit']).toBeDefined();
+      expect((JSON.parse(await readFile(mcpPath, 'utf-8'))).mcpServers['agents-pkg:test-marketplace/plugin-a:github']).toBeDefined();
+
+      const del = runWithEnv(
+        ['del-plugin', 'test-marketplace', 'plugin-a'],
+        projectDir,
+        homeDir
+      );
+      expect(del.exitCode).toBe(0);
+
+      const hooks = JSON.parse(await readFile(hooksPath, 'utf-8'));
+      expect(hooks.hooks['pre-commit']).toBeUndefined();
+      const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
+      expect(mcp.mcpServers['agents-pkg:test-marketplace/plugin-a:github']).toBeUndefined();
     } finally {
       await rm(homeDir, { recursive: true, force: true });
       await rm(projectDir, { recursive: true, force: true });

@@ -38,6 +38,12 @@ export function getCursorHooksPath(global: boolean, cwd?: string): string {
   return join(base, '.cursor', 'hooks.json');
 }
 
+/** Cursor only: path to .cursor/mcp.json */
+export function getCursorMcpPath(global: boolean, cwd?: string): string {
+  const base = global ? homedir() : (cwd || process.cwd());
+  return join(base, '.cursor', 'mcp.json');
+}
+
 /** Cursor only: path to .cursor/skills (global = ~/.cursor/skills) */
 export function getCursorSkillsDir(global: boolean, cwd?: string): string {
   const base = global ? homedir() : (cwd || process.cwd());

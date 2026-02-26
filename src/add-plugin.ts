@@ -15,13 +15,16 @@ import {
   REPO_SKILLS_DIR,
   REPO_COMMANDS_DIR,
   REPO_HOOKS_FILE,
+  REPO_MCP_FILE,
   REPO_RULES_DIR,
 } from './lib/constants.js';
-import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
+import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorMcpPath } from './lib/paths.js';
 import { createSymlink } from './lib/symlink.js';
 import { copyAgentsFromPluginStore } from './lib/agents-copy.js';
-import { mergeHooksIntoProject } from './lib/hooks.js';
+import { mergeHooksInto } from './lib/hooks.js';
 import type { HooksJson } from './lib/hooks.js';
+import { mergeMcpIntoCursor } from './lib/mcp.js';
+import type { McpJson } from './lib/mcp.js';
 import { readLock, writeLock } from './lib/lock.js';
 import { fatal } from './lib/errors.js';
 
@@ -78,7 +81,8 @@ async function listRuleFiles(rulesDir: string): Promise<string[]> {
 }
 
 /**
- * Copy plugin dir to store, then create symlinks for agents, commands, skills, rules; merge hooks.
+ * Copy plugin dir to store, then create symlinks for agents, commands, skills, rules; merge hooks and mcp.
+ * Returns { done, hookEntries } so caller can store pluginHooks in lock.
  */
 async function installPlugin(
   pluginStorePath: string,
@@ -86,9 +90,13 @@ async function installPlugin(
   cursorCommandsDir: string,
   cursorSkillsDir: string,
   cursorRulesDir: string,
-  cwd: string
-): Promise<string[]> {
+  cwd: string,
+  global: boolean,
+  marketplaceName: string,
+  pluginName: string
+): Promise<{ done: string[]; hookEntries: Array<{ hookName: string; command: string }> }> {
   const done: string[] = [];
+  let hookEntries: Array<{ hookName: string; command: string }> = [];
 
   // Agents are copied (not symlinked) so Cursor recognizes subagents
   const agentNames = await copyAgentsFromPluginStore(pluginStorePath, cursorAgentsDir);
@@ -126,25 +134,39 @@ async function installPlugin(
     const raw = await readFile(hooksPath, 'utf-8');
     const repoHooks = JSON.parse(raw) as HooksJson;
     if (repoHooks.hooks && typeof repoHooks.hooks === 'object' && Object.keys(repoHooks.hooks).length > 0) {
-      await mergeHooksIntoProject(repoHooks, cwd);
+      hookEntries = await mergeHooksInto(repoHooks, global, cwd);
       done.push('hooks');
     }
   } catch {
     // no hooks or invalid
   }
 
-  return done;
+  const mcpPath = join(pluginStorePath, REPO_MCP_FILE);
+  try {
+    const raw = await readFile(mcpPath, 'utf-8');
+    const pluginMcp = JSON.parse(raw) as McpJson;
+    if (pluginMcp.mcpServers && typeof pluginMcp.mcpServers === 'object' && Object.keys(pluginMcp.mcpServers).length > 0) {
+      const cursorMcpPath = getCursorMcpPath(global, cwd);
+      const prefix = `agents-pkg:${marketplaceName}/${pluginName}:`;
+      await mergeMcpIntoCursor(pluginMcp, cursorMcpPath, prefix);
+      done.push('mcp');
+    }
+  } catch {
+    // no mcp or invalid
+  }
+
+  return { done, hookEntries };
 }
 
 /**
  * Install marketplace from an already-resolved source dir. Used by add-plugin and update.
- * Returns list of installed plugin names.
+ * Returns { installed, pluginHooks } so caller can write lock.
  */
 export async function installMarketplaceFromDir(
   manifest: MarketplaceManifest,
   sourceDir: string,
   options: { pluginNames?: string[]; global?: boolean } = {}
-): Promise<string[]> {
+): Promise<{ installed: string[]; pluginHooks: Record<string, Array<{ hookName: string; command: string }>> }> {
   let pluginsToInstall = manifest.plugins;
   if (options.pluginNames && options.pluginNames.length > 0) {
     const requested = new Set(options.pluginNames);
@@ -167,6 +189,7 @@ export async function installMarketplaceFromDir(
   const cursorRulesDir = getCursorRulesDir(global, cwd);
 
   const installed: string[] = [];
+  const pluginHooks: Record<string, Array<{ hookName: string; command: string }>> = {};
   for (const plugin of pluginsToInstall) {
     const pluginDir = join(sourceDir, plugin.source);
     const absPluginDir = resolve(pluginDir);
@@ -178,17 +201,23 @@ export async function installMarketplaceFromDir(
     await mkdir(storePath, { recursive: true });
     await cp(pluginDir, storePath, { recursive: true });
 
-    const done = await installPlugin(
+    const { done, hookEntries } = await installPlugin(
       storePath,
       cursorAgentsDir,
       cursorCommandsDir,
       cursorSkillsDir,
       cursorRulesDir,
-      cwd
+      cwd,
+      global,
+      manifest.name,
+      plugin.name
     );
-    if (done.length > 0) installed.push(plugin.name);
+    if (done.length > 0) {
+      installed.push(plugin.name);
+      if (hookEntries.length > 0) pluginHooks[plugin.name] = hookEntries;
+    }
   }
-  return installed;
+  return { installed, pluginHooks };
 }
 
 function parseAddPluginArgs(args: string[]): { source: string; pluginNames?: string[]; global: boolean } {
@@ -226,13 +255,13 @@ export async function runAddPlugin(args: string[]): Promise<void> {
   try {
     const manifest = await readMarketplaceManifest(sourceDir);
     const version = manifest.metadata?.version ?? '0.0.0';
-    const installed = await installMarketplaceFromDir(manifest, sourceDir, {
+    const { installed, pluginHooks } = await installMarketplaceFromDir(manifest, sourceDir, {
       pluginNames,
       global,
     });
 
     if (installed.length === 0) {
-      console.log(`No agents, commands, skills, rules, or hooks found in the selected plugin(s).`);
+      console.log(`No agents, commands, skills, rules, hooks, or mcp found in the selected plugin(s).`);
       return;
     }
 
@@ -246,6 +275,7 @@ export async function runAddPlugin(args: string[]): Promise<void> {
       pluginNames: installed,
       updatedAt: new Date().toISOString(),
       global,
+      pluginHooks: Object.keys(pluginHooks).length > 0 ? pluginHooks : undefined,
     };
     await writeLock(lock);
   } finally {

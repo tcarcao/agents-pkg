@@ -91,11 +91,17 @@ export async function removeHook(hookName: string, options: HooksOptions = {}): 
 }
 
 /**
- * Merge repo hooks into project .cursor/hooks.json (Cursor only).
+ * Merge repo hooks into project or global .cursor/hooks.json (Cursor only).
+ * Returns the list of (hookName, command) entries that were actually merged (not already present).
  */
-export async function mergeHooksIntoProject(repoHooks: HooksJson, cwd: string): Promise<void> {
-  const path = getCursorHooksPath(false, cwd);
+export async function mergeHooksInto(
+  repoHooks: HooksJson,
+  global: boolean,
+  cwd: string
+): Promise<Array<{ hookName: string; command: string }>> {
+  const path = getCursorHooksPath(global, cwd);
   const existing = await readHooksJson(path);
+  const merged: Array<{ hookName: string; command: string }> = [];
   for (const [name, entries] of Object.entries(repoHooks.hooks ?? {})) {
     const existingEntries = existing.hooks[name] ?? [];
     const seen = new Set(existingEntries.map((e) => e.command));
@@ -103,9 +109,41 @@ export async function mergeHooksIntoProject(repoHooks: HooksJson, cwd: string): 
       if (!seen.has(e.command)) {
         existingEntries.push(e);
         seen.add(e.command);
+        merged.push({ hookName: name, command: e.command });
       }
     }
     existing.hooks[name] = existingEntries;
   }
   await writeHooksJson(path, existing);
+  return merged;
+}
+
+/**
+ * Remove specific (hookName, command) entries from project or global .cursor/hooks.json.
+ */
+export async function removeHookEntries(
+  entries: Array<{ hookName: string; command: string }>,
+  global: boolean,
+  cwd: string
+): Promise<void> {
+  if (entries.length === 0) return;
+  const path = getCursorHooksPath(global, cwd);
+  const data = await readHooksJson(path);
+  const toRemove = new Set(entries.map((e) => `${e.hookName}\0${e.command}`));
+  for (const key of Object.keys(data.hooks)) {
+    const arr = data.hooks[key].filter(
+      (e) => !toRemove.has(`${key}\0${e.command}`)
+    );
+    if (arr.length === 0) delete data.hooks[key];
+    else data.hooks[key] = arr;
+  }
+  await writeHooksJson(path, data);
+}
+
+/**
+ * Merge repo hooks into project .cursor/hooks.json (Cursor only).
+ * @deprecated Use mergeHooksInto(repoHooks, false, cwd) for project scope.
+ */
+export async function mergeHooksIntoProject(repoHooks: HooksJson, cwd: string): Promise<void> {
+  await mergeHooksInto(repoHooks, false, cwd);
 }

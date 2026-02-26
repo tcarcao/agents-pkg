@@ -33,6 +33,33 @@ export async function createFakeMarketplaceRepo(): Promise<string> {
   return dir;
 }
 
+/** Same as createFakeMarketplaceRepo but plugin-a also has hooks/hooks.json and mcp/mcp.json. */
+export async function createFakeMarketplaceRepoWithHooksAndMcp(): Promise<string> {
+  const dir = await createFakeMarketplaceRepo();
+  await mkdir(join(dir, 'plugin-a', 'hooks'), { recursive: true });
+  await writeFile(
+    join(dir, 'plugin-a', 'hooks', 'hooks.json'),
+    JSON.stringify({
+      version: 1,
+      hooks: {
+        'pre-commit': [{ command: '/repo/plugin-a/pre-commit' }],
+      },
+    }),
+    'utf-8'
+  );
+  await mkdir(join(dir, 'plugin-a', 'mcp'), { recursive: true });
+  await writeFile(
+    join(dir, 'plugin-a', 'mcp', 'mcp.json'),
+    JSON.stringify({
+      mcpServers: {
+        github: { command: 'npx', args: ['-y', 'github-mcp'] },
+      },
+    }),
+    'utf-8'
+  );
+  return dir;
+}
+
 export function runWithEnv(args: string[], cwd: string, home: string) {
   return runCli(args, cwd, { AGENTS_PKG_HOME: home });
 }

@@ -3,10 +3,12 @@
  */
 
 import { rm } from 'fs/promises';
-import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir } from './lib/paths.js';
+import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorMcpPath } from './lib/paths.js';
 import { getMarketplaceStorePath, getPluginStorePath } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
 import { removeCopiedAgentsForPlugin } from './lib/agents-copy.js';
+import { removeHookEntries } from './lib/hooks.js';
+import { removeMcpServersByPrefix } from './lib/mcp.js';
 import { readLock, writeLock } from './lib/lock.js';
 import { fatal } from './lib/errors.js';
 
@@ -29,6 +31,14 @@ export async function runDelMarketplace(args: string[]): Promise<void> {
   const cursorCommandsDir = getCursorCommandsDir(global, cwd);
   const cursorSkillsDir = getCursorSkillsDir(global, cwd);
   const cursorRulesDir = getCursorRulesDir(global, cwd);
+  const cursorMcpPath = getCursorMcpPath(global, cwd);
+
+  for (const pluginName of entry.pluginNames ?? []) {
+    if (entry.pluginHooks?.[pluginName]?.length) {
+      await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
+    }
+    await removeMcpServersByPrefix(cursorMcpPath, `agents-pkg:${name}/${pluginName}:`);
+  }
 
   for (const pluginName of entry.pluginNames ?? []) {
     const pluginStorePath = getPluginStorePath(name, pluginName);

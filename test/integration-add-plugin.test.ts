@@ -7,6 +7,7 @@ import { rm, readFile, access } from 'fs/promises';
 import { join } from 'path';
 import {
   createFakeMarketplaceRepo,
+  createFakeMarketplaceRepoWithHooksAndMcp,
   runWithEnv,
   listOutput,
   createTempDir,
@@ -153,6 +154,46 @@ describe('integration add-plugin', () => {
       expect(lock.marketplaces['test-marketplace']).toBeDefined();
       expect(lock.marketplaces['test-marketplace'].pluginNames).toContain('plugin-a');
       expect(lock.marketplaces['test-marketplace'].pluginNames).toContain('plugin-b');
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('with hooks and mcp writes pluginHooks to lock and merges into .cursor/hooks.json and .cursor/mcp.json', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepoWithHooksAndMcp();
+    const lockPath = join(homeDir, AGENTS_DIR, LOCK_FILE);
+    const hooksPath = join(projectDir, '.cursor', 'hooks.json');
+    const mcpPath = join(projectDir, '.cursor', 'mcp.json');
+    try {
+      const add = runWithEnv(
+        ['add-plugin', repoDir, '--project'],
+        projectDir,
+        homeDir
+      );
+      expect(add.exitCode).toBe(0);
+      expect(add.stdout).toContain('Installed marketplace "test-marketplace"');
+
+      const lock = JSON.parse(await readFile(lockPath, 'utf-8'));
+      expect(lock.marketplaces['test-marketplace'].pluginHooks).toBeDefined();
+      expect(lock.marketplaces['test-marketplace'].pluginHooks['plugin-a']).toEqual([
+        { hookName: 'pre-commit', command: '/repo/plugin-a/pre-commit' },
+      ]);
+
+      const hooks = JSON.parse(await readFile(hooksPath, 'utf-8'));
+      expect(hooks.hooks['pre-commit']).toContainEqual({
+        command: '/repo/plugin-a/pre-commit',
+      });
+
+      const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
+      const prefixedKey = 'agents-pkg:test-marketplace/plugin-a:github';
+      expect(mcp.mcpServers[prefixedKey]).toEqual({
+        command: 'npx',
+        args: ['-y', 'github-mcp'],
+      });
     } finally {
       await rm(homeDir, { recursive: true, force: true });
       await rm(projectDir, { recursive: true, force: true });

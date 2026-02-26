@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents working on the `agents-pkg` CLI 
 
 ## Project Overview
 
-`agents-pkg` is a **Cursor-only** marketplace installer. It installs plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/`. **Agents** are **copied** into `.cursor/agents` (so Cursor recognizes subagents); **commands**, **skills**, and **rules** are **symlinked** into `.cursor/commands`, `~/.cursor/skills`, `.cursor/rules`. Hooks are merged into `.cursor/hooks.json`. Use `agents-pkg update` to re-fetch each installed marketplace and reinstall when the manifest version changed.
+`agents-pkg` is a **Cursor-only** marketplace installer. It installs plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/`. **Agents** are **copied** into `.cursor/agents` (so Cursor recognizes subagents); **commands**, **skills**, and **rules** are **symlinked** into `.cursor/commands`, `~/.cursor/skills`, `.cursor/rules`. **Hooks** from `hooks/hooks.json` are **merged** into `.cursor/hooks.json` (project or global per `--project`/`--global`); **MCP** from `mcp/mcp.json` is **merged** into `.cursor/mcp.json` with prefixed keys. On uninstall or update, hook entries and MCP keys for that plugin are removed. Use `agents-pkg update` to re-fetch each installed marketplace and reinstall when the manifest version changed.
 
 ## Commands
 
@@ -58,8 +58,9 @@ src/
     ├── symlink.ts         # createSymlink, removeSymlinksInDirPointingUnder
     ├── source-dir.ts      # resolveSourceToDir (clone or resolve path; local + GitLab + GitHub)
     ├── lock.ts            # readLock, writeLock, getLockPath, getHome
-    ├── paths.ts           # getCursorSubagentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorHooksPath
-    ├── hooks.ts           # mergeHooksIntoProject (used during add-plugin)
+    ├── paths.ts           # getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorHooksPath, getCursorMcpPath
+    ├── hooks.ts           # mergeHooksInto, removeHookEntries (merge/remove hooks; scope project or global)
+    ├── mcp.ts             # mergeMcpIntoCursor, removeMcpServersByPrefix (merge/remove MCP with prefixed keys)
     └── errors.ts          # fatal(message)
 ```
 
@@ -67,23 +68,24 @@ src/
 
 - **Store:** `~/.agents/agents-pkg/marketplace/<marketplace-name>/<plugin-name>/` — copied from source (e.g. `./global`).
 - **Agents:** Plugin `agents/*.md` are **copied** into `.cursor/agents` (so Cursor recognizes subagents). On uninstall, those files are removed.
-- **Symlinks:** Plugin `commands/*.md`, `skills/<dir>/`, and `rules/*.md` / `rules/*.mdc` are symlinked into project `.cursor/commands`, global `~/.cursor/skills`, and project `.cursor/rules`. Hooks from `hooks/hooks.json` are **merged** into project `.cursor/hooks.json` (no symlink).
+- **Symlinks:** Plugin `commands/*.md`, `skills/<dir>/`, and `rules/*.md` / `rules/*.mdc` are symlinked into project `.cursor/commands`, global `~/.cursor/skills`, and project `.cursor/rules`. **Hooks** from `hooks/hooks.json` are **merged** into project or global `.cursor/hooks.json` (per `--project`/`--global`); the merged entries are recorded in the lock (`pluginHooks`) so they can be removed on uninstall. **MCP** from `mcp/mcp.json` is **merged** into `.cursor/mcp.json` under prefixed keys (`agents-pkg:<marketplace>/<plugin>:<key>`); removal on uninstall is by prefix (no lock field).
 - **Sources:** Local paths and GitLab/GitHub (full URL or shorthand). No API dependency for update—clone and read file.
 
 ## Lock file (v1)
 
-- `version: 1`, `marketplaces: { "<name>": { name, source, version, pluginNames, updatedAt } }`.
+- `version: 1`, `marketplaces: { "<name>": { name, source, version, pluginNames, updatedAt, global?, pluginHooks? } }`.
+- `pluginHooks` is optional: `Record<pluginName, Array<{ hookName, command }>>` for hook entries we merged (used for removal on del-plugin/del-marketplace/update).
 - Missing or invalid lock returns empty (version 1, marketplaces empty).
 
 ## Key integration points
 
 | Feature | Implementation |
 | ------- | -------------- |
-| add-plugin | `src/add-plugin.ts`: resolveSourceToDir → readMarketplaceManifest(dir) → copy plugin dirs to store → copy agents (agents-copy), createSymlink for commands/skills/rules, mergeHooksIntoProject for hooks → writeLock |
+| add-plugin | `src/add-plugin.ts`: resolveSourceToDir → readMarketplaceManifest(dir) → copy plugin dirs to store → copy agents (agents-copy), createSymlink for commands/skills/rules, mergeHooksInto (return hook entries), mergeMcpIntoCursor (prefixed keys) → writeLock with pluginHooks |
 | list | `src/list.ts`: readLock, print each marketplace (name, version, scope, source, plugin names) |
-| del-plugin | `src/del-plugin.ts`: removeCopiedAgentsForPlugin, remove one plugin’s symlinks and store (getPluginStorePath); update lock pluginNames; remove marketplace entry if last plugin |
-| del-marketplace | `src/del-marketplace.ts`: removeCopiedAgentsForPlugin per plugin, removeSymlinksInDirPointingUnder for agents/commands/skills/rules; rm store; update lock |
-| update | `src/update.ts`: for each lock.marketplaces, resolve source to dir, readMarketplaceManifest(dir), if version changed then removeCopiedAgentsForPlugin per plugin, remove symlinks, rm store, installMarketplaceFromDir, writeLock |
+| del-plugin | `src/del-plugin.ts`: removeHookEntries for plugin, removeMcpServersByPrefix, removeCopiedAgentsForPlugin, remove plugin symlinks and store; update lock (pluginNames, pluginHooks); remove marketplace entry if last plugin |
+| del-marketplace | `src/del-marketplace.ts`: removeHookEntries and removeMcpServersByPrefix per plugin, removeCopiedAgentsForPlugin per plugin, removeSymlinksInDirPointingUnder for agents/commands/skills/rules; rm store; update lock |
+| update | `src/update.ts`: for each lock.marketplaces, resolve source to dir, readMarketplaceManifest(dir), if version changed then removeHookEntries and removeMcpServersByPrefix per plugin, removeCopiedAgentsForPlugin, remove symlinks, rm store, installMarketplaceFromDir (refreshes pluginHooks), writeLock |
 | Source resolution | `lib/source-dir.ts`: resolveSourceToDir (local path, git URL, owner/repo, gitlab.com/owner/repo) |
 
 ## Development
