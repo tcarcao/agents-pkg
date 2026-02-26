@@ -2,14 +2,17 @@
  * agents-pkg update: for each installed marketplace, re-fetch source, read .cursor-plugin/marketplace.json, reinstall if version changed.
  */
 
-import { rm } from 'fs/promises';
+import { rm, readFile } from 'fs/promises';
+import { join } from 'path';
 import { resolveSourceToDir } from './lib/source-dir.js';
 import { readMarketplaceManifest, getMarketplaceStorePath, getPluginStorePath, getPluginVersionFromSource } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
 import { removeCopiedAgentsForPlugin } from './lib/agents-copy.js';
 import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorMcpPath } from './lib/paths.js';
 import { removeHookEntries } from './lib/hooks.js';
-import { removeMcpServersByPrefix, removeMcpServersByKeys, getLegacyMcpPrefix } from './lib/mcp.js';
+import { removeMcpServersByPrefix, removeMcpServersByKeys, getLegacyMcpPrefix, mergeMcpIntoCursor, getMcpKey } from './lib/mcp.js';
+import type { McpJson } from './lib/mcp.js';
+import { REPO_MCP_FILE } from './lib/constants.js';
 import { installMarketplaceFromDir } from './add-plugin.js';
 import { readLock, writeLock } from './lib/lock.js';
 
@@ -92,6 +95,37 @@ export async function runUpdate(): Promise<void> {
               ? await getPluginVersionFromSource(plugin, sourceDir)
               : '0.0.0';
           }
+          lockModified = true;
+        }
+
+        // One-time MCP migration: when mcp.json has legacy-format keys (or lock has no pluginMcpKeys), remove legacy keys and add new-format keys from store so mcp.json stays under 60-char limit
+        const needsMcpMigration = !entry.pluginMcpKeys || (entry.pluginNames ?? []).some((pn) => !entry.pluginMcpKeys?.[pn]);
+        if (needsMcpMigration) {
+          if (!entry.pluginMcpKeys) entry.pluginMcpKeys = {};
+          for (const pluginName of entry.pluginNames ?? []) {
+            await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(name, pluginName));
+            if (entry.pluginMcpKeys[pluginName]?.length) {
+              await removeMcpServersByKeys(cursorMcpPath, entry.pluginMcpKeys[pluginName]);
+            }
+            const pluginStorePath = getPluginStorePath(name, pluginName);
+            const mcpFilePath = join(pluginStorePath, REPO_MCP_FILE);
+            try {
+              const raw = await readFile(mcpFilePath, 'utf-8');
+              const pluginMcp = JSON.parse(raw) as McpJson;
+              if (pluginMcp.mcpServers && typeof pluginMcp.mcpServers === 'object' && Object.keys(pluginMcp.mcpServers).length > 0) {
+                const prefix = pluginName + ':';
+                const keysAdded: string[] = [];
+                for (const key of Object.keys(pluginMcp.mcpServers)) {
+                  keysAdded.push(getMcpKey(pluginName, key));
+                }
+                await mergeMcpIntoCursor(pluginMcp, cursorMcpPath, prefix);
+                entry.pluginMcpKeys[pluginName] = keysAdded;
+              }
+            } catch {
+              // no mcp or invalid
+            }
+          }
+          entry.updatedAt = new Date().toISOString();
           lockModified = true;
         }
 

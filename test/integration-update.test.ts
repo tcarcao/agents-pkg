@@ -136,6 +136,52 @@ describe('integration update', () => {
     }
   });
 
+  it('when lock has no pluginMcpKeys (old install), update migrates MCP to new format and writes pluginMcpKeys to lock', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepoWithHooksAndMcp();
+    const lockPath = join(homeDir, AGENTS_DIR, LOCK_FILE);
+    const mcpPath = join(projectDir, '.cursor', 'mcp.json');
+    const legacyKey = 'agents-pkg:test-marketplace/plugin-a:github';
+    try {
+      runWithEnv(['add-plugin', repoDir, '--project'], projectDir, homeDir);
+      const lock = JSON.parse(await readFile(lockPath, 'utf-8'));
+      expect(lock.marketplaces['test-marketplace'].pluginMcpKeys?.['plugin-a']).toEqual(['plugin-a:github']);
+      delete lock.marketplaces['test-marketplace'].pluginMcpKeys;
+      await writeFile(lockPath, JSON.stringify(lock), 'utf-8');
+      // Replicate real issue: mcp.json still has legacy-format key (e.g. from before the short-prefix fix)
+      await writeFile(
+        mcpPath,
+        JSON.stringify({
+          mcpServers: {
+            [legacyKey]: { command: 'npx', args: ['-y', 'github-mcp'] },
+          },
+        }),
+        'utf-8'
+      );
+
+      const update = runWithEnv(['update'], projectDir, homeDir);
+      expect(update.exitCode).toBe(0);
+      expect(update.stdout).not.toContain('Updating marketplace');
+
+      // MCP file must have new-format key and must NOT have legacy key (fixes 60-char filter)
+      const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
+      expect(mcp.mcpServers[legacyKey]).toBeUndefined();
+      expect(mcp.mcpServers[getMcpKey('plugin-a', 'github')]).toBeDefined();
+      expect(mcp.mcpServers[getMcpKey('plugin-a', 'github')]).toEqual({
+        command: 'npx',
+        args: ['-y', 'github-mcp'],
+      });
+      const lockAfter = JSON.parse(await readFile(lockPath, 'utf-8'));
+      expect(lockAfter.marketplaces['test-marketplace'].pluginMcpKeys).toBeDefined();
+      expect(lockAfter.marketplaces['test-marketplace'].pluginMcpKeys['plugin-a']).toEqual(['plugin-a:github']);
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
   it('when lock has no pluginVersions, update backfills from source and persists lock', async () => {
     const homeDir = await createTempDir('agents-pkg-int-home-');
     const projectDir = await createTempDir('agents-pkg-int-project-');
