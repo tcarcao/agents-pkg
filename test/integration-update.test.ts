@@ -260,6 +260,42 @@ describe('integration update', () => {
     }
   });
 
+  it('on marketplace version bump only reinstalls previously selected plugins, not all manifest plugins', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepo();
+    const lockPath = join(homeDir, AGENTS_DIR, LOCK_FILE);
+    const storeRoot = join(homeDir, AGENTS_DIR, MARKETPLACE_DIR, 'test-marketplace');
+    const manifestPath = join(repoDir, '.cursor-plugin', 'marketplace.json');
+    try {
+      // given: user installs only plugin-a from a marketplace with both plugin-a and plugin-b
+      runWithEnv(['add-plugin', repoDir, 'plugin-a', '--project'], projectDir, homeDir);
+      const lockBefore = JSON.parse(await readFile(lockPath, 'utf-8'));
+      expect(lockBefore.marketplaces['test-marketplace'].pluginNames).toEqual(['plugin-a']);
+
+      // when: marketplace version bumps and user runs update
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf-8'));
+      manifest.metadata = { version: '0.2.0' };
+      await writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+
+      const update = runWithEnv(['update'], projectDir, homeDir);
+      expect(update.exitCode).toBe(0);
+
+      // then: only plugin-a is reinstalled; plugin-b is NOT pulled in
+      const lockAfter = JSON.parse(await readFile(lockPath, 'utf-8'));
+      expect(lockAfter.marketplaces['test-marketplace'].pluginNames).toEqual(['plugin-a']);
+      expect(lockAfter.marketplaces['test-marketplace'].pluginNames).not.toContain('plugin-b');
+
+      const { access } = await import('fs/promises');
+      await access(join(storeRoot, 'plugin-a'));
+      await expect(access(join(storeRoot, 'plugin-b'))).rejects.toThrow();
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
   it('when lock has no pluginVersions, update backfills from source and persists lock', async () => {
     const homeDir = await createTempDir('agents-pkg-int-home-');
     const projectDir = await createTempDir('agents-pkg-int-project-');

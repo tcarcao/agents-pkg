@@ -79,7 +79,10 @@ export async function runUpdate(): Promise<void> {
         await removeSymlinksInDirPointingUnder(cursorRulesDir, storeRoot);
         await rm(storeRoot, { recursive: true, force: true }).catch(() => {});
 
+        const manifestPluginNames = new Set(manifest.plugins.map((p) => p.name));
+        const previousPlugins = (entry.pluginNames ?? []).filter((n) => manifestPluginNames.has(n));
         const { installed, pluginHooks, pluginMcpKeys } = await installMarketplaceFromDir(manifest, sourceDir, {
+          pluginNames: previousPlugins.length > 0 ? previousPlugins : undefined,
           global,
           isUpdate: true,
         });
