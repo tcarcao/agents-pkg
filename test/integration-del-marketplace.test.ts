@@ -14,8 +14,6 @@ import {
 } from './integration-helpers.js';
 import { expect } from 'vitest';
 import { AGENTS_DIR, LOCK_FILE, MARKETPLACE_DIR } from '../src/lib/constants.js';
-import { getMcpKey } from '../src/lib/mcp.js';
-
 describe('integration del-marketplace', () => {
   it('removes entire marketplace; list shows empty', async () => {
     const homeDir = await createTempDir('agents-pkg-int-home-');
@@ -81,7 +79,7 @@ describe('integration del-marketplace', () => {
     }
   });
 
-  it('removes hook entries and MCP keys for all plugins', async () => {
+  it('removes hook entries but leaves MCP server entries in mcp.json', async () => {
     const homeDir = await createTempDir('agents-pkg-int-home-');
     const projectDir = await createTempDir('agents-pkg-int-project-');
     const repoDir = await createFakeMarketplaceRepoWithHooksAndMcp();
@@ -90,14 +88,17 @@ describe('integration del-marketplace', () => {
     try {
       runWithEnv(['add-plugin', repoDir, '--project'], projectDir, homeDir);
       expect((JSON.parse(await readFile(hooksPath, 'utf-8'))).hooks['pre-commit']).toBeDefined();
-      expect((JSON.parse(await readFile(mcpPath, 'utf-8'))).mcpServers[getMcpKey('plugin-a', 'github')]).toBeDefined();
+      expect((JSON.parse(await readFile(mcpPath, 'utf-8'))).mcpServers.github).toBeDefined();
 
       runWithEnv(['del-marketplace', 'test-marketplace'], projectDir, homeDir);
 
       const hooks = JSON.parse(await readFile(hooksPath, 'utf-8'));
       expect(hooks.hooks['pre-commit']).toBeUndefined();
       const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
-      expect(mcp.mcpServers[getMcpKey('plugin-a', 'github')]).toBeUndefined();
+      expect(mcp.mcpServers.github).toEqual({
+        command: 'npx',
+        args: ['-y', 'github-mcp'],
+      });
     } finally {
       await rm(homeDir, { recursive: true, force: true });
       await rm(projectDir, { recursive: true, force: true });

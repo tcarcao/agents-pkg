@@ -15,7 +15,7 @@ export interface MarketplaceEntry {
   pluginHooks?: Record<string, Array<{ hookName: string; command: string }>>;
   /** Last-installed version per plugin (for update diff). */
   pluginVersions?: Record<string, string>;
-  /** MCP server keys we added per plugin (for removal on uninstall). */
+  /** Original MCP server keys from each plugin’s manifest (metadata only; .cursor/mcp.json is not modified on uninstall). */
   pluginMcpKeys?: Record<string, string[]>;
 }
 

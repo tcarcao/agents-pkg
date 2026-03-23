@@ -24,7 +24,11 @@ import { createSymlink } from './lib/symlink.js';
 import { copyAgentsFromPluginStore } from './lib/agents-copy.js';
 import { mergeHooksInto } from './lib/hooks.js';
 import type { HooksJson } from './lib/hooks.js';
-import { mergeMcpIntoCursor, removeMcpServersByPrefix, removeMcpServersByKeys, getMcpKey, getLegacyMcpPrefix } from './lib/mcp.js';
+import {
+  mergeMcpIntoCursor,
+  readMcpJson,
+  updateMcpServersInCursor,
+} from './lib/mcp.js';
 import type { McpJson } from './lib/mcp.js';
 import { readLock, writeLock } from './lib/lock.js';
 import { fatal } from './lib/errors.js';
@@ -93,9 +97,8 @@ async function installPlugin(
   cursorRulesDir: string,
   cwd: string,
   global: boolean,
-  marketplaceName: string,
   pluginName: string,
-  existingMcpKeysForPlugin?: string[]
+  isUpdate: boolean
 ): Promise<{ done: string[]; hookEntries: Array<{ hookName: string; command: string }>; mcpKeysAdded: string[] }> {
   const done: string[] = [];
   let hookEntries: Array<{ hookName: string; command: string }> = [];
@@ -150,15 +153,21 @@ async function installPlugin(
     const pluginMcp = JSON.parse(raw) as McpJson;
     if (pluginMcp.mcpServers && typeof pluginMcp.mcpServers === 'object' && Object.keys(pluginMcp.mcpServers).length > 0) {
       const cursorMcpPath = getCursorMcpPath(global, cwd);
-      await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(marketplaceName, pluginName));
-      if (existingMcpKeysForPlugin?.length) {
-        await removeMcpServersByKeys(cursorMcpPath, existingMcpKeysForPlugin);
-      }
-      const prefix = pluginName + ':';
       for (const key of Object.keys(pluginMcp.mcpServers)) {
-        mcpKeysAdded.push(getMcpKey(pluginName, key));
+        mcpKeysAdded.push(key);
       }
-      await mergeMcpIntoCursor(pluginMcp, cursorMcpPath, prefix);
+      if (isUpdate) {
+        await updateMcpServersInCursor(pluginMcp, cursorMcpPath);
+      } else {
+        const existingMcp = await readMcpJson(cursorMcpPath);
+        const existingServers = existingMcp.mcpServers ?? {};
+        for (const key of Object.keys(pluginMcp.mcpServers)) {
+          if (key in existingServers) {
+            console.warn(`MCP server "${key}" already exists in ${cursorMcpPath}, skipping.`);
+          }
+        }
+        await mergeMcpIntoCursor(pluginMcp, cursorMcpPath, '');
+      }
       done.push('mcp');
     }
   } catch {
@@ -175,7 +184,7 @@ async function installPlugin(
 export async function installMarketplaceFromDir(
   manifest: MarketplaceManifest,
   sourceDir: string,
-  options: { pluginNames?: string[]; global?: boolean; existingPluginMcpKeys?: Record<string, string[]> } = {}
+  options: { pluginNames?: string[]; global?: boolean; isUpdate?: boolean } = {}
 ): Promise<{ installed: string[]; pluginHooks: Record<string, Array<{ hookName: string; command: string }>>; pluginMcpKeys: Record<string, string[]> }> {
   let pluginsToInstall = manifest.plugins;
   if (options.pluginNames && options.pluginNames.length > 0) {
@@ -191,6 +200,7 @@ export async function installMarketplaceFromDir(
   }
 
   const global = options.global !== false;
+  const isUpdate = options.isUpdate === true;
   const absSourceDir = resolve(sourceDir);
   const cwd = process.cwd();
   const cursorAgentsDir = getCursorAgentsDir(global, cwd);
@@ -220,9 +230,8 @@ export async function installMarketplaceFromDir(
       cursorRulesDir,
       cwd,
       global,
-      manifest.name,
       plugin.name,
-      options.existingPluginMcpKeys?.[plugin.name]
+      isUpdate
     );
     if (done.length > 0) {
       installed.push(plugin.name);
@@ -269,11 +278,9 @@ export async function runAddPlugin(args: string[]): Promise<void> {
     const manifest = await readMarketplaceManifest(sourceDir);
     const version = manifest.metadata?.version ?? '0.0.0';
     const lock = await readLock();
-    const existingPluginMcpKeys = lock.marketplaces[manifest.name]?.pluginMcpKeys;
     const { installed, pluginHooks, pluginMcpKeys } = await installMarketplaceFromDir(manifest, sourceDir, {
       pluginNames,
       global,
-      existingPluginMcpKeys,
     });
 
     if (installed.length === 0) {

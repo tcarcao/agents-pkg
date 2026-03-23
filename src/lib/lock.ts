@@ -11,7 +11,7 @@ import {
   LOCK_FILE,
   CURRENT_LOCK_VERSION,
 } from './constants.js';
-import type { LockFile } from './types.js';
+import type { LockFile, MarketplaceEntry } from './types.js';
 
 export function getHome(): string {
   const env = process.env.AGENTS_PKG_HOME;
@@ -43,6 +43,31 @@ export async function readLock(): Promise<LockFile> {
   try {
     const content = await readFile(lockPath, 'utf-8');
     const parsed = JSON.parse(content) as LockFile & { agents?: unknown; sources?: unknown; plugins?: unknown };
+
+    if (parsed.version === 1) {
+      const marketplaces =
+        parsed.marketplaces && typeof parsed.marketplaces === 'object' ? parsed.marketplaces : {};
+      for (const entry of Object.values(marketplaces)) {
+        if (!entry || typeof entry !== 'object') continue;
+        const e = entry as MarketplaceEntry;
+        if (!e.pluginMcpKeys || typeof e.pluginMcpKeys !== 'object') continue;
+        for (const pluginName of Object.keys(e.pluginMcpKeys)) {
+          const keys = e.pluginMcpKeys[pluginName];
+          if (!Array.isArray(keys)) continue;
+          e.pluginMcpKeys[pluginName] = keys.map((k: string) => {
+            const prefix = pluginName + ':';
+            return k.startsWith(prefix) ? k.slice(prefix.length) : k;
+          });
+        }
+      }
+      const migrated: LockFile = {
+        version: CURRENT_LOCK_VERSION,
+        marketplaces: marketplaces as LockFile['marketplaces'],
+      };
+      await writeFile(lockPath, JSON.stringify(migrated, null, 2), 'utf-8');
+      return migrated;
+    }
+
     if (typeof parsed.version !== 'number' || parsed.version !== CURRENT_LOCK_VERSION) {
       return createEmptyLock();
     }

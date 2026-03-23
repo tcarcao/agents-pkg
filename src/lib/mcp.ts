@@ -1,6 +1,6 @@
 /**
  * MCP = Cursor .cursor/mcp.json only.
- * Merge plugin mcp/mcp.json into single file with prefixed keys for clean removal.
+ * Install merges new server keys (original names); update overwrites only keys that already exist.
  */
 
 import { readFile, writeFile, mkdir } from 'fs/promises';
@@ -22,17 +22,7 @@ export interface McpJson {
   mcpServers?: Record<string, McpServerConfig>;
 }
 
-/** Build MCP server key from plugin name and original server key (new format). */
-export function getMcpKey(pluginName: string, serverKey: string): string {
-  return pluginName + ':' + serverKey;
-}
-
-/** Legacy prefix for migration removal (agents-pkg:marketplace/plugin:). */
-export function getLegacyMcpPrefix(marketplaceName: string, pluginName: string): string {
-  return `agents-pkg:${marketplaceName}/${pluginName}:`;
-}
-
-async function readMcpJson(path: string): Promise<McpJson> {
+export async function readMcpJson(path: string): Promise<McpJson> {
   try {
     const raw = await readFile(path, 'utf-8');
     const parsed = JSON.parse(raw) as McpJson;
@@ -75,18 +65,16 @@ export async function mergeMcpIntoCursor(
 }
 
 /**
- * Remove all mcpServers keys that start with the given prefix.
+ * For each server key in pluginMcp, if that key already exists in cursor mcp.json, replace its config.
+ * Does not add new keys. Missing mcp.json is a no-op (no file created).
  */
-export async function removeMcpServersByPrefix(
-  cursorPath: string,
-  prefix: string
-): Promise<void> {
+export async function updateMcpServersInCursor(pluginMcp: McpJson, cursorPath: string): Promise<void> {
   const existing = await readMcpJson(cursorPath);
   const servers = existing.mcpServers ?? {};
   let changed = false;
-  for (const key of Object.keys(servers)) {
-    if (key.startsWith(prefix)) {
-      delete servers[key];
+  for (const [key, config] of Object.entries(pluginMcp.mcpServers ?? {})) {
+    if (key in servers) {
+      servers[key] = config;
       changed = true;
     }
   }
@@ -96,19 +84,16 @@ export async function removeMcpServersByPrefix(
 }
 
 /**
- * Remove exactly the given mcpServers keys. Missing keys are skipped (no error).
+ * Rename mcpServers keys (e.g. legacy prefixed → original). Skips if newKey already exists.
  */
-export async function removeMcpServersByKeys(
-  cursorPath: string,
-  keys: string[]
-): Promise<void> {
-  if (keys.length === 0) return;
+export async function renameMcpKeys(cursorPath: string, renames: Record<string, string>): Promise<void> {
   const existing = await readMcpJson(cursorPath);
   const servers = existing.mcpServers ?? {};
   let changed = false;
-  for (const key of keys) {
-    if (key in servers) {
-      delete servers[key];
+  for (const [oldKey, newKey] of Object.entries(renames)) {
+    if (oldKey in servers && !(newKey in servers)) {
+      servers[newKey] = servers[oldKey];
+      delete servers[oldKey];
       changed = true;
     }
   }

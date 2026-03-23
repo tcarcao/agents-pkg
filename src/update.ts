@@ -2,19 +2,34 @@
  * agents-pkg update: for each installed marketplace, re-fetch source, read .cursor-plugin/marketplace.json, reinstall if version changed.
  */
 
-import { rm, readFile } from 'fs/promises';
-import { join } from 'path';
+import { rm } from 'fs/promises';
 import { resolveSourceToDir } from './lib/source-dir.js';
 import { readMarketplaceManifest, getMarketplaceStorePath, getPluginStorePath, getPluginVersionFromSource } from './lib/marketplace.js';
 import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
 import { removeCopiedAgentsForPlugin } from './lib/agents-copy.js';
 import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorMcpPath } from './lib/paths.js';
 import { removeHookEntries } from './lib/hooks.js';
-import { removeMcpServersByPrefix, removeMcpServersByKeys, getLegacyMcpPrefix, mergeMcpIntoCursor, getMcpKey } from './lib/mcp.js';
-import type { McpJson } from './lib/mcp.js';
-import { REPO_MCP_FILE } from './lib/constants.js';
+import { renameMcpKeys } from './lib/mcp.js';
+import type { MarketplaceEntry } from './lib/types.js';
 import { installMarketplaceFromDir } from './add-plugin.js';
 import { readLock, writeLock } from './lib/lock.js';
+
+async function applyMcpKeyRenamesForMarketplace(
+  marketplaceName: string,
+  entry: MarketplaceEntry,
+  cursorMcpPath: string
+): Promise<void> {
+  if (!entry.pluginMcpKeys) return;
+  const renames: Record<string, string> = {};
+  for (const [pluginName, keys] of Object.entries(entry.pluginMcpKeys)) {
+    if (!Array.isArray(keys)) continue;
+    for (const key of keys) {
+      renames[`${pluginName}:${key}`] = key;
+      renames[`agents-pkg:${marketplaceName}/${pluginName}:${key}`] = key;
+    }
+  }
+  await renameMcpKeys(cursorMcpPath, renames);
+}
 
 export async function runUpdate(): Promise<void> {
   const lock = await readLock();
@@ -44,6 +59,7 @@ export async function runUpdate(): Promise<void> {
       const manifest = await readMarketplaceManifest(sourceDir);
       const newVersion = manifest.metadata?.version ?? '0.0.0';
       const cursorMcpPath = getCursorMcpPath(global, cwd);
+      await applyMcpKeyRenamesForMarketplace(name, entry, cursorMcpPath);
 
       if (newVersion !== entry.version) {
         console.log(`Updating marketplace ${name} (${entry.version} -> ${newVersion})...`);
@@ -52,10 +68,6 @@ export async function runUpdate(): Promise<void> {
           if (entry.pluginHooks?.[pluginName]?.length) {
             await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
           }
-          if (entry.pluginMcpKeys?.[pluginName]?.length) {
-            await removeMcpServersByKeys(cursorMcpPath, entry.pluginMcpKeys[pluginName]);
-          }
-          await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(name, pluginName));
         }
         for (const pluginName of entry.pluginNames ?? []) {
           const pluginStorePath = getPluginStorePath(name, pluginName);
@@ -69,7 +81,7 @@ export async function runUpdate(): Promise<void> {
 
         const { installed, pluginHooks, pluginMcpKeys } = await installMarketplaceFromDir(manifest, sourceDir, {
           global,
-          existingPluginMcpKeys: entry.pluginMcpKeys,
+          isUpdate: true,
         });
         entry.version = newVersion;
         entry.pluginNames = installed;
@@ -98,37 +110,6 @@ export async function runUpdate(): Promise<void> {
           lockModified = true;
         }
 
-        // One-time MCP migration: when mcp.json has legacy-format keys (or lock has no pluginMcpKeys), remove legacy keys and add new-format keys from store so mcp.json stays under 60-char limit
-        const needsMcpMigration = !entry.pluginMcpKeys || (entry.pluginNames ?? []).some((pn) => !entry.pluginMcpKeys?.[pn]);
-        if (needsMcpMigration) {
-          if (!entry.pluginMcpKeys) entry.pluginMcpKeys = {};
-          for (const pluginName of entry.pluginNames ?? []) {
-            await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(name, pluginName));
-            if (entry.pluginMcpKeys[pluginName]?.length) {
-              await removeMcpServersByKeys(cursorMcpPath, entry.pluginMcpKeys[pluginName]);
-            }
-            const pluginStorePath = getPluginStorePath(name, pluginName);
-            const mcpFilePath = join(pluginStorePath, REPO_MCP_FILE);
-            try {
-              const raw = await readFile(mcpFilePath, 'utf-8');
-              const pluginMcp = JSON.parse(raw) as McpJson;
-              if (pluginMcp.mcpServers && typeof pluginMcp.mcpServers === 'object' && Object.keys(pluginMcp.mcpServers).length > 0) {
-                const prefix = pluginName + ':';
-                const keysAdded: string[] = [];
-                for (const key of Object.keys(pluginMcp.mcpServers)) {
-                  keysAdded.push(getMcpKey(pluginName, key));
-                }
-                await mergeMcpIntoCursor(pluginMcp, cursorMcpPath, prefix);
-                entry.pluginMcpKeys[pluginName] = keysAdded;
-              }
-            } catch {
-              // no mcp or invalid
-            }
-          }
-          entry.updatedAt = new Date().toISOString();
-          lockModified = true;
-        }
-
         const manifestPluginNames = new Set(manifest.plugins.map((p) => p.name));
 
         for (const pluginName of [...(entry.pluginNames ?? [])]) {
@@ -138,10 +119,6 @@ export async function runUpdate(): Promise<void> {
           if (entry.pluginHooks?.[pluginName]?.length) {
             await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
           }
-          if (entry.pluginMcpKeys?.[pluginName]?.length) {
-            await removeMcpServersByKeys(cursorMcpPath, entry.pluginMcpKeys[pluginName]);
-          }
-          await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(name, pluginName));
           await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
           await removeSymlinksInDirPointingUnder(cursorAgentsDir, pluginStorePath);
           await removeSymlinksInDirPointingUnder(cursorCommandsDir, pluginStorePath);
@@ -176,10 +153,6 @@ export async function runUpdate(): Promise<void> {
           if (entry.pluginHooks?.[pluginName]?.length) {
             await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
           }
-          if (entry.pluginMcpKeys?.[pluginName]?.length) {
-            await removeMcpServersByKeys(cursorMcpPath, entry.pluginMcpKeys[pluginName]);
-          }
-          await removeMcpServersByPrefix(cursorMcpPath, getLegacyMcpPrefix(name, pluginName));
           await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
           await removeSymlinksInDirPointingUnder(cursorAgentsDir, pluginStorePath);
           await removeSymlinksInDirPointingUnder(cursorCommandsDir, pluginStorePath);
@@ -190,7 +163,7 @@ export async function runUpdate(): Promise<void> {
           const { installed, pluginHooks, pluginMcpKeys: pluginMcpKeysReturned } = await installMarketplaceFromDir(manifest, sourceDir, {
             pluginNames: [pluginName],
             global,
-            existingPluginMcpKeys: entry.pluginMcpKeys,
+            isUpdate: true,
           });
           if (installed.includes(pluginName)) {
             const plugin = manifest.plugins.find((p) => p.name === pluginName);

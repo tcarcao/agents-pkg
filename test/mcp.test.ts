@@ -1,18 +1,16 @@
 /**
- * MCP lib tests: mergeMcpIntoCursor (prefixed keys, idempotent) and removeMcpServersByPrefix.
+ * MCP lib tests: mergeMcpIntoCursor, updateMcpServersInCursor, renameMcpKeys.
  * Uses temp dir for mcp.json so real ~/.cursor is untouched.
  */
 
-import { describe, it } from 'vitest';
-import { mkdtemp, rm, readFile, writeFile, mkdir } from 'fs/promises';
+import { describe, it, expect } from 'vitest';
+import { mkdtemp, rm, readFile, writeFile, mkdir, access } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import {
   mergeMcpIntoCursor,
-  removeMcpServersByPrefix,
-  removeMcpServersByKeys,
-  getMcpKey,
-  getLegacyMcpPrefix,
+  updateMcpServersInCursor,
+  renameMcpKeys,
   type McpJson,
 } from '../src/lib/mcp.js';
 
@@ -26,72 +24,81 @@ async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
 }
 
 describe('mcp', () => {
-  describe('getMcpKey', () => {
-    it('returns pluginName:serverKey', () => {
-      expect(getMcpKey('my-plugin', 'github')).toBe('my-plugin:github');
+  describe('updateMcpServersInCursor', () => {
+    it('updates existing key config', async () => {
+      await withTempDir(async (dir) => {
+        const cursorPath = join(dir, 'mcp.json');
+        await mkdir(dir, { recursive: true });
+        await writeFile(
+          cursorPath,
+          JSON.stringify({ mcpServers: { github: { command: 'old' } } }),
+          'utf-8'
+        );
+        const pluginMcp: McpJson = { mcpServers: { github: { command: 'new' } } };
+        await updateMcpServersInCursor(pluginMcp, cursorPath);
+        const data = JSON.parse(await readFile(cursorPath, 'utf-8')) as McpJson;
+        expect(data.mcpServers!.github).toEqual({ command: 'new' });
+      });
+    });
+
+    it('updates only keys that already exist; does not add new keys', async () => {
+      await withTempDir(async (dir) => {
+        const cursorPath = join(dir, 'mcp.json');
+        await mkdir(dir, { recursive: true });
+        await writeFile(
+          cursorPath,
+          JSON.stringify({ mcpServers: { github: { command: 'a' } } }),
+          'utf-8'
+        );
+        const pluginMcp: McpJson = {
+          mcpServers: {
+            github: { command: 'b' },
+            slack: { command: 'c' },
+          },
+        };
+        await updateMcpServersInCursor(pluginMcp, cursorPath);
+        const data = JSON.parse(await readFile(cursorPath, 'utf-8')) as McpJson;
+        expect(data.mcpServers!.github).toEqual({ command: 'b' });
+        expect(data.mcpServers!.slack).toBeUndefined();
+      });
+    });
+
+    it('is no-op when no plugin keys match cursor keys', async () => {
+      await withTempDir(async (dir) => {
+        const cursorPath = join(dir, 'mcp.json');
+        await mkdir(dir, { recursive: true });
+        const before = JSON.stringify({ mcpServers: { github: { command: 'keep' } } });
+        await writeFile(cursorPath, before, 'utf-8');
+        await updateMcpServersInCursor({ mcpServers: { slack: { command: 'x' } } }, cursorPath);
+        expect(await readFile(cursorPath, 'utf-8')).toBe(before);
+      });
+    });
+
+    it('when mcp.json missing, does not create a file', async () => {
+      await withTempDir(async (dir) => {
+        const cursorPath = join(dir, 'nested', 'mcp.json');
+        await updateMcpServersInCursor({ mcpServers: { github: { command: 'x' } } }, cursorPath);
+        await expect(access(cursorPath)).rejects.toThrow();
+      });
     });
   });
 
-  describe('getLegacyMcpPrefix', () => {
-    it('returns agents-pkg:marketplace/plugin:', () => {
-      expect(getLegacyMcpPrefix('mk', 'pl')).toBe('agents-pkg:mk/pl:');
-    });
-  });
-
-  describe('removeMcpServersByKeys', () => {
-    it('removes only the given keys and leaves others', async () => {
+  describe('renameMcpKeys', () => {
+    it('renames prefixed keys to original names when new key is free', async () => {
       await withTempDir(async (dir) => {
         const cursorPath = join(dir, 'mcp.json');
         await mkdir(dir, { recursive: true });
         await writeFile(
           cursorPath,
           JSON.stringify({
-            mcpServers: {
-              keyA: { command: 'a' },
-              keyB: { command: 'b' },
-              keyC: { command: 'keep' },
-            },
+            mcpServers: { 'plugin-a:github': { command: 'npx', args: ['-y', 'github-mcp'] } },
           }),
           'utf-8'
         );
-        await removeMcpServersByKeys(cursorPath, ['keyA', 'keyB']);
-        const raw = await readFile(cursorPath, 'utf-8');
-        const data = JSON.parse(raw) as McpJson;
-        expect(data.mcpServers!['keyA']).toBeUndefined();
-        expect(data.mcpServers!['keyB']).toBeUndefined();
-        expect(data.mcpServers!['keyC']).toEqual({ command: 'keep' });
-      });
-    });
-
-    it('is no-op when keys array is empty (file unchanged)', async () => {
-      await withTempDir(async (dir) => {
-        const cursorPath = join(dir, 'mcp.json');
-        await mkdir(dir, { recursive: true });
-        const content = JSON.stringify({ mcpServers: { only: { command: 'x' } } });
-        await writeFile(cursorPath, content, 'utf-8');
-        await removeMcpServersByKeys(cursorPath, []);
-        const raw = await readFile(cursorPath, 'utf-8');
-        expect(raw).toBe(content);
-      });
-    });
-
-    it('skips missing key without error, leaves others unchanged', async () => {
-      await withTempDir(async (dir) => {
-        const cursorPath = join(dir, 'mcp.json');
-        await mkdir(dir, { recursive: true });
-        await writeFile(
-          cursorPath,
-          JSON.stringify({
-            mcpServers: {
-              present: { command: 'keep' },
-            },
-          }),
-          'utf-8'
-        );
-        await removeMcpServersByKeys(cursorPath, ['not-present']);
-        const raw = await readFile(cursorPath, 'utf-8');
-        const data = JSON.parse(raw) as McpJson;
-        expect(data.mcpServers!['present']).toEqual({ command: 'keep' });
+        await renameMcpKeys(cursorPath, { 'plugin-a:github': 'github' });
+        const data = JSON.parse(await readFile(cursorPath, 'utf-8')) as McpJson;
+        expect(data.mcpServers!['plugin-a:github']).toBeUndefined();
+        expect(data.mcpServers!.github).toEqual({ command: 'npx', args: ['-y', 'github-mcp'] });
       });
     });
   });
@@ -162,7 +169,7 @@ describe('mcp', () => {
       });
     });
 
-    it('with plugin name prefix produces keys like plugin-a:github', async () => {
+    it('with non-empty prefix can produce keys like plugin-a:github', async () => {
       await withTempDir(async (dir) => {
         const cursorPath = join(dir, 'mcp.json');
         const pluginMcp: McpJson = {
@@ -174,59 +181,22 @@ describe('mcp', () => {
         await mergeMcpIntoCursor(pluginMcp, cursorPath, prefix);
         const raw = await readFile(cursorPath, 'utf-8');
         const data = JSON.parse(raw) as McpJson;
-        expect(data.mcpServers![getMcpKey('plugin-a', 'github')]).toEqual({
+        expect(data.mcpServers!['plugin-a:github']).toEqual({
           command: 'npx',
           args: ['-y', 'github-mcp'],
         });
       });
     });
-  });
 
-  describe('removeMcpServersByPrefix', () => {
-    it('removes only keys starting with prefix', async () => {
+    it('with empty prefix uses original server key names', async () => {
       await withTempDir(async (dir) => {
         const cursorPath = join(dir, 'mcp.json');
-        await mkdir(dir, { recursive: true });
-        await writeFile(
-          cursorPath,
-          JSON.stringify({
-            mcpServers: {
-              'agents-pkg:mk/pl:one': { command: 'a' },
-              'agents-pkg:mk/pl:two': { command: 'b' },
-              'other-server': { command: 'keep' },
-            },
-          }),
-          'utf-8'
-        );
-
-        await removeMcpServersByPrefix(cursorPath, 'agents-pkg:mk/pl:');
-
-        const raw = await readFile(cursorPath, 'utf-8');
-        const data = JSON.parse(raw) as McpJson;
-        expect(data.mcpServers!['agents-pkg:mk/pl:one']).toBeUndefined();
-        expect(data.mcpServers!['agents-pkg:mk/pl:two']).toBeUndefined();
-        expect(data.mcpServers!['other-server']).toEqual({ command: 'keep' });
-      });
-    });
-
-    it('leaves empty mcpServers object when all keys removed', async () => {
-      await withTempDir(async (dir) => {
-        const cursorPath = join(dir, 'mcp.json');
-        await writeFile(
-          cursorPath,
-          JSON.stringify({
-            mcpServers: {
-              'agents-pkg:mk/pl:only': { command: 'x' },
-            },
-          }),
-          'utf-8'
-        );
-
-        await removeMcpServersByPrefix(cursorPath, 'agents-pkg:mk/pl:');
-
-        const raw = await readFile(cursorPath, 'utf-8');
-        const data = JSON.parse(raw) as McpJson;
-        expect(data.mcpServers).toEqual({});
+        const pluginMcp: McpJson = {
+          mcpServers: { github: { command: 'npx', args: ['-y', 'github-mcp'] } },
+        };
+        await mergeMcpIntoCursor(pluginMcp, cursorPath, '');
+        const data = JSON.parse(await readFile(cursorPath, 'utf-8')) as McpJson;
+        expect(data.mcpServers!.github).toEqual({ command: 'npx', args: ['-y', 'github-mcp'] });
       });
     });
   });

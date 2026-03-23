@@ -3,7 +3,7 @@
  */
 
 import { describe, it } from 'vitest';
-import { rm, readFile, writeFile } from 'fs/promises';
+import { rm, readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import {
   createFakeMarketplaceRepo,
@@ -14,8 +14,6 @@ import {
 } from './integration-helpers.js';
 import { expect } from 'vitest';
 import { AGENTS_DIR, LOCK_FILE, MARKETPLACE_DIR } from '../src/lib/constants.js';
-import { getMcpKey } from '../src/lib/mcp.js';
-
 describe('integration update', () => {
   it('does not reinstall when version unchanged', async () => {
     const homeDir = await createTempDir('agents-pkg-int-home-');
@@ -33,7 +31,7 @@ describe('integration update', () => {
     }
   });
 
-  it('on version bump removes hooks/MCP then reinstalls and refreshes pluginHooks', async () => {
+  it('on version bump removes hooks then reinstalls and refreshes pluginHooks and MCP', async () => {
     const homeDir = await createTempDir('agents-pkg-int-home-');
     const projectDir = await createTempDir('agents-pkg-int-project-');
     const repoDir = await createFakeMarketplaceRepoWithHooksAndMcp();
@@ -62,7 +60,7 @@ describe('integration update', () => {
       const hooks = JSON.parse(await readFile(hooksPath, 'utf-8'));
       expect(hooks.hooks['pre-commit']).toContainEqual({ command: '/repo/plugin-a/pre-commit' });
       const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
-      expect(mcp.mcpServers[getMcpKey('plugin-a', 'github')]).toBeDefined();
+      expect(mcp.mcpServers.github).toBeDefined();
     } finally {
       await rm(homeDir, { recursive: true, force: true });
       await rm(projectDir, { recursive: true, force: true });
@@ -136,25 +134,24 @@ describe('integration update', () => {
     }
   });
 
-  it('when lock has no pluginMcpKeys (old install), update migrates MCP to new format and writes pluginMcpKeys to lock', async () => {
+  it('when lock v1 has prefixed pluginMcpKeys and mcp.json uses old keys, update renames keys and persists lock v2', async () => {
     const homeDir = await createTempDir('agents-pkg-int-home-');
     const projectDir = await createTempDir('agents-pkg-int-project-');
     const repoDir = await createFakeMarketplaceRepoWithHooksAndMcp();
     const lockPath = join(homeDir, AGENTS_DIR, LOCK_FILE);
     const mcpPath = join(projectDir, '.cursor', 'mcp.json');
-    const legacyKey = 'agents-pkg:test-marketplace/plugin-a:github';
     try {
       runWithEnv(['add-plugin', repoDir, '--project'], projectDir, homeDir);
       const lock = JSON.parse(await readFile(lockPath, 'utf-8'));
-      expect(lock.marketplaces['test-marketplace'].pluginMcpKeys?.['plugin-a']).toEqual(['plugin-a:github']);
-      delete lock.marketplaces['test-marketplace'].pluginMcpKeys;
+      lock.version = 1;
+      lock.marketplaces['test-marketplace'].pluginMcpKeys = { 'plugin-a': ['plugin-a:github'] };
       await writeFile(lockPath, JSON.stringify(lock), 'utf-8');
-      // Replicate real issue: mcp.json still has legacy-format key (e.g. from before the short-prefix fix)
+      await mkdir(join(projectDir, '.cursor'), { recursive: true });
       await writeFile(
         mcpPath,
         JSON.stringify({
           mcpServers: {
-            [legacyKey]: { command: 'npx', args: ['-y', 'github-mcp'] },
+            'plugin-a:github': { command: 'npx', args: ['-y', 'github-mcp'] },
           },
         }),
         'utf-8'
@@ -164,17 +161,98 @@ describe('integration update', () => {
       expect(update.exitCode).toBe(0);
       expect(update.stdout).not.toContain('Updating marketplace');
 
-      // MCP file must have new-format key and must NOT have legacy key (fixes 60-char filter)
       const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
-      expect(mcp.mcpServers[legacyKey]).toBeUndefined();
-      expect(mcp.mcpServers[getMcpKey('plugin-a', 'github')]).toBeDefined();
-      expect(mcp.mcpServers[getMcpKey('plugin-a', 'github')]).toEqual({
+      expect(mcp.mcpServers['plugin-a:github']).toBeUndefined();
+      expect(mcp.mcpServers.github).toEqual({
         command: 'npx',
         args: ['-y', 'github-mcp'],
       });
       const lockAfter = JSON.parse(await readFile(lockPath, 'utf-8'));
-      expect(lockAfter.marketplaces['test-marketplace'].pluginMcpKeys).toBeDefined();
-      expect(lockAfter.marketplaces['test-marketplace'].pluginMcpKeys['plugin-a']).toEqual(['plugin-a:github']);
+      expect(lockAfter.version).toBe(2);
+      expect(lockAfter.marketplaces['test-marketplace'].pluginMcpKeys?.['plugin-a']).toEqual(['github']);
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('on marketplace version bump updates existing MCP config from manifest', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepoWithHooksAndMcp();
+    const manifestPath = join(repoDir, '.cursor-plugin', 'marketplace.json');
+    const mcpPluginPath = join(repoDir, 'plugin-a', 'mcp', 'mcp.json');
+    const mcpPath = join(projectDir, '.cursor', 'mcp.json');
+    try {
+      runWithEnv(['add-plugin', repoDir, '--project'], projectDir, homeDir);
+      await writeFile(
+        mcpPluginPath,
+        JSON.stringify({
+          mcpServers: { github: { command: 'node', args: ['new-mcp.js'] } },
+        }),
+        'utf-8'
+      );
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf-8'));
+      manifest.metadata = { version: '0.2.0' };
+      await writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+
+      const update = runWithEnv(['update'], projectDir, homeDir);
+      expect(update.exitCode).toBe(0);
+      const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
+      expect(mcp.mcpServers.github).toEqual({ command: 'node', args: ['new-mcp.js'] });
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('when user removed MCP key from mcp.json, update does not re-add it', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepoWithHooksAndMcp();
+    const manifestPath = join(repoDir, '.cursor-plugin', 'marketplace.json');
+    const mcpPath = join(projectDir, '.cursor', 'mcp.json');
+    try {
+      runWithEnv(['add-plugin', repoDir, '--project'], projectDir, homeDir);
+      await writeFile(mcpPath, JSON.stringify({ mcpServers: {} }), 'utf-8');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf-8'));
+      manifest.metadata = { version: '0.2.0' };
+      await writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+
+      const update = runWithEnv(['update'], projectDir, homeDir);
+      expect(update.exitCode).toBe(0);
+      const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
+      expect(mcp.mcpServers.github).toBeUndefined();
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('when marketplace version unchanged and plugin version changed, updates MCP config from manifest', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepoWithHooksAndMcp();
+    const mcpPluginPath = join(repoDir, 'plugin-a', 'mcp', 'mcp.json');
+    const mcpPath = join(projectDir, '.cursor', 'mcp.json');
+    try {
+      runWithEnv(['add-plugin', repoDir, '--project'], projectDir, homeDir);
+      await writeFile(
+        mcpPluginPath,
+        JSON.stringify({
+          mcpServers: { github: { command: 'node', args: ['per-plugin.js'] } },
+        }),
+        'utf-8'
+      );
+      await addPluginJsonVersion(repoDir, 'plugin-a', '2.0.0');
+
+      const update = runWithEnv(['update'], projectDir, homeDir);
+      expect(update.exitCode).toBe(0);
+      const mcp = JSON.parse(await readFile(mcpPath, 'utf-8'));
+      expect(mcp.mcpServers.github).toEqual({ command: 'node', args: ['per-plugin.js'] });
     } finally {
       await rm(homeDir, { recursive: true, force: true });
       await rm(projectDir, { recursive: true, force: true });

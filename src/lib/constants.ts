@@ -5,7 +5,7 @@
 
 export const AGENTS_DIR = '.agents';
 export const LOCK_FILE = '.agents-pkg-lock.json';
-export const CURRENT_LOCK_VERSION = 1;
+export const CURRENT_LOCK_VERSION = 2;
 
 /** Marketplace store under ~/.agents/agents-pkg/marketplace/<name>/<plugin-name> */
 export const MARKETPLACE_DIR = 'agents-pkg/marketplace';
