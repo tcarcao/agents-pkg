@@ -1,14 +1,11 @@
 # agents-pkg
 
-**Cursor-only** marketplace installer. Install plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`. Plugin content is copied to a store and **symlinked** into Cursor’s config dirs (agents, commands, skills, rules); hooks are merged into `.cursor/hooks.json`.
+**Cursor-only** marketplace installer. Install plugins from a source (repo URL or local path) that contains `.cursor-plugin/marketplace.json`.
 
-- **Agents** — Agent `.md` files in `.cursor/agents` (global or project).
-- **Commands** — Slash commands in `.cursor/commands`.
-- **Skills** — Skill dirs (each with `SKILL.md`) in `.cursor/skills`.
-- **Rules** — Rule `.md`/`.mdc` files in `.cursor/rules`.
-- **Hooks** — Cursor lifecycle hooks merged into project `.cursor/hooks.json`.
+- **Global (default)** — Full plugin trees sync to `~/.cursor/plugins/local/<plugin-name>/` for Cursor’s native plugin loader (skills, agents, commands, rules, hooks, MCP via each plugin’s `plugin.json`).
+- **Project (`--project`)** — Plugin content is copied to a store and **symlinked** into the project’s `.cursor/` dirs; hooks and MCP are merged into project `.cursor/hooks.json` and `.cursor/mcp.json`.
 
-By default, symlinks are **global** (`~/.cursor/*`). Use `--project` to install into the current project’s `.cursor/` instead.
+By default, installs are **global** (`~/.cursor/plugins/local/`). Use `--project` for the legacy flattened install into the current project’s `.cursor/`.
 
 ---
 
@@ -31,9 +28,10 @@ npx agents-pkg --help
 | Item | Location |
 |------|----------|
 | Lock file | `~/.agents/.agents-pkg-lock.json` |
-| Store | `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/` |
+| Global plugins | `~/.cursor/plugins/local/<plugin-name>/` (or `$CURSOR_LOCAL_PLUGINS`) |
+| Project store | `~/.agents/agents-pkg/marketplace/<name>/<plugin-name>/` (`--project` only) |
 
-Override home for tests: set `AGENTS_PKG_HOME` to a temp directory.
+Override home for tests: set `AGENTS_PKG_HOME` to a temp directory. Override global plugin root: set `CURSOR_LOCAL_PLUGINS`.
 
 ---
 
@@ -47,8 +45,8 @@ agents-pkg add-plugin <source> [plugin-name] [--global | --project]
 
 - **source** — Repo URL (GitHub `owner/repo`, GitLab, or full URL) or local path.
 - **plugin-name** — Optional. Install only this plugin from the marketplace; otherwise all plugins are installed.
-- **--global** (default) — Symlink into `~/.cursor/agents`, `~/.cursor/commands`, `~/.cursor/skills`, `~/.cursor/rules`. Available in all projects.
-- **--project** — Symlink into the current project’s `.cursor/` so only this project sees the plugin.
+- **--global** (default) — Sync each plugin to `~/.cursor/plugins/local/<plugin-name>/`. Enable in Cursor **Settings → Plugins**.
+- **--project** — Symlink into the current project’s `.cursor/` (agents, commands, skills, rules); merge hooks/MCP into project `.cursor/`.
 
 Examples:
 
@@ -72,7 +70,7 @@ Shows each installed marketplace with its version, scope (global/project), sourc
 agents-pkg del-plugin <marketplace-name> <plugin-name>
 ```
 
-Removes that plugin’s symlinks and data; updates the lock. If it was the last plugin, the marketplace entry is removed. Use `agents-pkg list` to see marketplace and plugin names.
+Removes that plugin and updates the lock. Global installs remove `~/.cursor/plugins/local/<plugin-name>/` entirely. Project installs remove symlinks, store copy, and merged hook entries.
 
 ### Remove an entire marketplace
 
@@ -88,7 +86,7 @@ Uninstalls the marketplace and all its plugins. `name` is the marketplace name (
 agents-pkg update
 ```
 
-Re-fetches each installed marketplace source, reads `.cursor-plugin/marketplace.json`, and reinstalls if the manifest `metadata.version` changed. Symlinks are recreated in the same place (global or project) as when the marketplace was first installed.
+Re-fetches each installed marketplace source, reads `.cursor-plugin/marketplace.json`, and reinstalls if the manifest `metadata.version` changed. Global installs re-sync `plugins/local/`; project installs recreate symlinks from the store.
 
 ---
 
@@ -123,9 +121,9 @@ Inside each plugin directory (e.g. `./global`), use this layout:
 | Commands | `commands/` | One `.md` file per command. |
 | Skills | `skills/` | One subdir per skill; each must contain `SKILL.md`. |
 | Rules | `rules/` | Top-level `.md` or `.mdc` rule files. |
-| Hooks | `hooks/hooks.json` | Cursor-style `{ "version": 1, "hooks": { ... } }`. Merged into project `.cursor/hooks.json` only. |
+| Hooks | `hooks/hooks.json` | Cursor-style `{ "version": 1, "hooks": { ... } }`. Global: loaded from plugin package; project: merged into `.cursor/hooks.json`. |
 
-Missing dirs are skipped. Hooks are always merged into the **project** `.cursor/hooks.json` (not global).
+Missing dirs are skipped.
 
 ---
 
@@ -135,11 +133,9 @@ With **--global** (default):
 
 | Kind | Location |
 |------|----------|
-| Agents | `~/.cursor/agents/` |
-| Commands | `~/.cursor/commands/` |
-| Skills | `~/.cursor/skills/` |
-| Rules | `~/.cursor/rules/` |
-| Hooks | Project `.cursor/hooks.json` (merged) |
+| Full plugin package | `~/.cursor/plugins/local/<plugin-name>/` |
+
+Hooks, MCP, skills, agents, and commands are declared in each plugin’s `.cursor-plugin/plugin.json` and loaded by Cursor when the plugin is enabled.
 
 With **--project**:
 

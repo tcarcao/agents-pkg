@@ -9,6 +9,7 @@ import {
   createFakeMarketplaceRepo,
   createFakeMarketplaceRepoWithHooksAndMcp,
   runWithEnv,
+  globalInstallEnv,
   listOutput,
   createTempDir,
 } from './integration-helpers.js';
@@ -199,6 +200,78 @@ describe('integration add-plugin', () => {
         command: 'npx',
         args: ['-y', 'github-mcp'],
       });
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('global install syncs plugins to plugins/local and does not use marketplace store', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepo();
+    const localRoot = join(homeDir, '.cursor', 'plugins', 'local');
+    const storeRoot = join(homeDir, AGENTS_DIR, MARKETPLACE_DIR, 'test-marketplace');
+    try {
+      const add = runWithEnv(['add-plugin', repoDir], projectDir, homeDir, globalInstallEnv(homeDir));
+      expect(add.exitCode).toBe(0);
+      expect(add.stdout).toContain('plugin-a');
+      expect(add.stdout).toContain('plugin-b');
+
+      await access(join(localRoot, 'plugin-a', 'agents', 'foo.md'));
+      await access(join(localRoot, 'plugin-b', 'skills', 'baz', 'SKILL.md'));
+
+      await expect(access(storeRoot)).rejects.toThrow();
+
+      const list = listOutput(projectDir, homeDir);
+      expect(list).toContain('global');
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('global reinstall with selected plugins removes no-longer-selected local plugins', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepo();
+    const localRoot = join(homeDir, '.cursor', 'plugins', 'local');
+    try {
+      const env = globalInstallEnv(homeDir);
+      const addAll = runWithEnv(['add-plugin', repoDir], projectDir, homeDir, env);
+      expect(addAll.exitCode).toBe(0);
+      await access(join(localRoot, 'plugin-a'));
+      await access(join(localRoot, 'plugin-b'));
+
+      const addOne = runWithEnv(['add-plugin', repoDir, 'plugin-a'], projectDir, homeDir, env);
+      expect(addOne.exitCode).toBe(0);
+
+      await access(join(localRoot, 'plugin-a'));
+      await expect(access(join(localRoot, 'plugin-b'))).rejects.toThrow();
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('global install with invalid plugin keeps existing local plugins', async () => {
+    const homeDir = await createTempDir('agents-pkg-int-home-');
+    const projectDir = await createTempDir('agents-pkg-int-project-');
+    const repoDir = await createFakeMarketplaceRepo();
+    const localRoot = join(homeDir, '.cursor', 'plugins', 'local');
+    try {
+      const env = globalInstallEnv(homeDir);
+      const addAll = runWithEnv(['add-plugin', repoDir], projectDir, homeDir, env);
+      expect(addAll.exitCode).toBe(0);
+
+      const invalid = runWithEnv(['add-plugin', repoDir, 'missing-plugin'], projectDir, homeDir, env);
+      expect(invalid.exitCode).toBe(1);
+
+      await access(join(localRoot, 'plugin-a'));
+      await access(join(localRoot, 'plugin-b'));
     } finally {
       await rm(homeDir, { recursive: true, force: true });
       await rm(projectDir, { recursive: true, force: true });
