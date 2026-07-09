@@ -35,11 +35,6 @@
   "engines": {
     "node": ">=18"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
   "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.19.11",
