@@ -1,10 +1,11 @@
 /**
  * add-plugin — Cursor only. Install marketplace from source.
- * Reads .cursor-plugin/marketplace.json inside the source; copies plugin dirs to store and symlinks into .cursor/*.
+ * Global (default): sync full plugin trees to ~/.cursor/plugins/local/<plugin-name>/.
+ * Project (--project): copy to store and symlink/copy into project .cursor/*.
  */
 
 import { join, resolve, sep } from 'path';
-import { readdir, readFile, stat, cp } from 'fs/promises';
+import { readdir, readFile, stat, cp, mkdir } from 'fs/promises';
 import { resolveSourceToDir } from './lib/source-dir.js';
 import {
   readMarketplaceManifest,
@@ -19,7 +20,14 @@ import {
   REPO_MCP_FILE,
   REPO_RULES_DIR,
 } from './lib/constants.js';
-import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorMcpPath } from './lib/paths.js';
+import {
+  getCursorAgentsDir,
+  getCursorCommandsDir,
+  getCursorSkillsDir,
+  getCursorRulesDir,
+  getCursorMcpPath,
+} from './lib/paths.js';
+import { syncPluginToLocal } from './lib/plugin-local.js';
 import { createSymlink } from './lib/symlink.js';
 import { copyAgentsFromPluginStore } from './lib/agents-copy.js';
 import { mergeHooksInto } from './lib/hooks.js';
@@ -31,6 +39,7 @@ import {
 } from './lib/mcp.js';
 import type { McpJson } from './lib/mcp.js';
 import { readLock, writeLock } from './lib/lock.js';
+import { uninstallPluginFromCursor } from './lib/uninstall-plugin.js';
 import { fatal } from './lib/errors.js';
 
 function isContainedIn(childPath: string, parentPath: string): boolean {
@@ -86,10 +95,9 @@ async function listRuleFiles(rulesDir: string): Promise<string[]> {
 }
 
 /**
- * Copy plugin dir to store, then create symlinks for agents, commands, skills, rules; merge hooks and mcp.
- * Returns { done, hookEntries, mcpKeysAdded } so caller can store pluginHooks and pluginMcpKeys in lock.
+ * Project install: copy plugin dir to store, then symlink/copy into project .cursor/*; merge hooks and mcp.
  */
-async function installPlugin(
+async function installPluginProject(
   pluginStorePath: string,
   cursorAgentsDir: string,
   cursorCommandsDir: string,
@@ -97,14 +105,12 @@ async function installPlugin(
   cursorRulesDir: string,
   cwd: string,
   global: boolean,
-  pluginName: string,
   isUpdate: boolean
 ): Promise<{ done: string[]; hookEntries: Array<{ hookName: string; command: string }>; mcpKeysAdded: string[] }> {
   const done: string[] = [];
   let hookEntries: Array<{ hookName: string; command: string }> = [];
   const mcpKeysAdded: string[] = [];
 
-  // Agents are copied (not symlinked) so Cursor recognizes subagents
   const agentNames = await copyAgentsFromPluginStore(pluginStorePath, cursorAgentsDir);
   if (agentNames.length > 0) done.push('agents');
 
@@ -179,7 +185,6 @@ async function installPlugin(
 
 /**
  * Install marketplace from an already-resolved source dir. Used by add-plugin and update.
- * Returns { installed, pluginHooks, pluginMcpKeys } so caller can write lock.
  */
 export async function installMarketplaceFromDir(
   manifest: MarketplaceManifest,
@@ -211,18 +216,25 @@ export async function installMarketplaceFromDir(
   const installed: string[] = [];
   const pluginHooks: Record<string, Array<{ hookName: string; command: string }>> = {};
   const pluginMcpKeys: Record<string, string[]> = {};
+
   for (const plugin of pluginsToInstall) {
     const pluginDir = join(sourceDir, plugin.source);
     const absPluginDir = resolve(pluginDir);
     if (!isContainedIn(absPluginDir, absSourceDir)) {
       fatal(`Plugin source "${plugin.source}" is outside the marketplace directory.`);
     }
+
+    if (global) {
+      await syncPluginToLocal(pluginDir, plugin.name);
+      installed.push(plugin.name);
+      continue;
+    }
+
     const storePath = getPluginStorePath(manifest.name, plugin.name);
-    const { mkdir } = await import('fs/promises');
     await mkdir(storePath, { recursive: true });
     await cp(pluginDir, storePath, { recursive: true });
 
-    const { done, hookEntries, mcpKeysAdded } = await installPlugin(
+    const { done, hookEntries, mcpKeysAdded } = await installPluginProject(
       storePath,
       cursorAgentsDir,
       cursorCommandsDir,
@@ -230,7 +242,6 @@ export async function installMarketplaceFromDir(
       cursorRulesDir,
       cwd,
       global,
-      plugin.name,
       isUpdate
     );
     if (done.length > 0) {
@@ -239,6 +250,7 @@ export async function installMarketplaceFromDir(
       if (mcpKeysAdded.length > 0) pluginMcpKeys[plugin.name] = mcpKeysAdded;
     }
   }
+
   return { installed, pluginHooks, pluginMcpKeys };
 }
 
@@ -266,7 +278,7 @@ export async function runAddPlugin(args: string[]): Promise<void> {
   const { source, pluginNames, global } = parseAddPluginArgs(args);
   if (!source) {
     fatal(
-      'Usage: agents-pkg add-plugin <source> [plugin-name...] [--global | --project]\n  source = repo URL or local path; optional plugin names = install only those plugins (default: all).\n  --global (default) = symlinks in ~/.cursor/*; --project = symlinks in project .cursor/*.'
+      'Usage: agents-pkg add-plugin <source> [plugin-name...] [--global | --project]\n  source = repo URL or local path; optional plugin names = install only those plugins (default: all).\n  --global (default) = sync into ~/.cursor/plugins/local/<plugin-name>/; --project = symlinks in project .cursor/*.'
     );
   }
 
@@ -278,6 +290,32 @@ export async function runAddPlugin(args: string[]): Promise<void> {
     const manifest = await readMarketplaceManifest(sourceDir);
     const version = manifest.metadata?.version ?? '0.0.0';
     const lock = await readLock();
+
+    if (pluginNames && pluginNames.length > 0) {
+      const available = new Set(manifest.plugins.map((p) => p.name));
+      const missing = pluginNames.filter((name) => !available.has(name));
+      if (missing.length > 0) {
+        fatal(
+          `Plugin(s) not found in marketplace: ${missing.join(', ')}. Available: ${manifest.plugins.map((p) => p.name).join(', ')}`
+        );
+      }
+    }
+
+    if (global) {
+      const previousEntry = lock.marketplaces[manifest.name];
+      if (previousEntry) {
+        for (const pluginName of previousEntry.pluginNames ?? []) {
+          await uninstallPluginFromCursor({
+            marketplaceName: manifest.name,
+            pluginName,
+            global: true,
+            cwd: process.cwd(),
+            pluginHooks: previousEntry.pluginHooks?.[pluginName],
+          });
+        }
+      }
+    }
+
     const { installed, pluginHooks, pluginMcpKeys } = await installMarketplaceFromDir(manifest, sourceDir, {
       pluginNames,
       global,

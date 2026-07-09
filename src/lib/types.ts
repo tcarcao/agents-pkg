@@ -9,7 +9,7 @@ export interface MarketplaceEntry {
   version: string;
   pluginNames: string[];
   updatedAt: string;
-  /** If true (default), symlinks go to ~/.cursor/*; if false, to project .cursor/*. */
+  /** If true (default), plugins sync to ~/.cursor/plugins/local/; if false, flatten into project .cursor/*. */
   global?: boolean;
   /** Hook entries we merged per plugin (for removal on uninstall). */
   pluginHooks?: Record<string, Array<{ hookName: string; command: string }>>;

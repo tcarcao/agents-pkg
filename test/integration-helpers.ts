@@ -80,8 +80,17 @@ export async function setPluginVersionInManifest(repoDir: string, pluginName: st
   await writeFile(path, JSON.stringify(manifest), 'utf-8');
 }
 
-export function runWithEnv(args: string[], cwd: string, home: string) {
-  return runCli(args, cwd, { AGENTS_PKG_HOME: home });
+export function runWithEnv(args: string[], cwd: string, home: string, extraEnv: Record<string, string> = {}) {
+  return runCli(args, cwd, { AGENTS_PKG_HOME: home, ...extraEnv });
+}
+
+/** Env for global install tests: lock under home, plugins under home/.cursor/plugins/local. */
+export function globalInstallEnv(home: string): Record<string, string> {
+  return {
+    AGENTS_PKG_HOME: home,
+    HOME: home,
+    CURSOR_LOCAL_PLUGINS: join(home, '.cursor', 'plugins', 'local'),
+  };
 }
 
 export function listOutput(cwd: string, home: string): string {

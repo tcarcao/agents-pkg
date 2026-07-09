@@ -4,14 +4,16 @@
 
 import { rm } from 'fs/promises';
 import { resolveSourceToDir } from './lib/source-dir.js';
-import { readMarketplaceManifest, getMarketplaceStorePath, getPluginStorePath, getPluginVersionFromSource } from './lib/marketplace.js';
-import { removeSymlinksInDirPointingUnder } from './lib/symlink.js';
-import { removeCopiedAgentsForPlugin } from './lib/agents-copy.js';
-import { getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorMcpPath } from './lib/paths.js';
-import { removeHookEntries } from './lib/hooks.js';
+import {
+  readMarketplaceManifest,
+  getMarketplaceStorePath,
+  getPluginVersionFromSource,
+} from './lib/marketplace.js';
+import { getCursorMcpPath } from './lib/paths.js';
 import { renameMcpKeys } from './lib/mcp.js';
 import type { MarketplaceEntry } from './lib/types.js';
 import { installMarketplaceFromDir } from './add-plugin.js';
+import { uninstallPluginFromCursor } from './lib/uninstall-plugin.js';
 import { readLock, writeLock } from './lib/lock.js';
 
 async function applyMcpKeyRenamesForMarketplace(
@@ -44,10 +46,6 @@ export async function runUpdate(): Promise<void> {
     if (!entry || typeof entry.source !== 'string') continue;
 
     const global = entry.global !== false;
-    const cursorAgentsDir = getCursorAgentsDir(global, cwd);
-    const cursorCommandsDir = getCursorCommandsDir(global, cwd);
-    const cursorSkillsDir = getCursorSkillsDir(global, cwd);
-    const cursorRulesDir = getCursorRulesDir(global, cwd);
 
     const { path: sourceDir, cleanup } = await resolveSourceToDir(entry.source).catch(() => ({
       path: '',
@@ -58,26 +56,29 @@ export async function runUpdate(): Promise<void> {
     try {
       const manifest = await readMarketplaceManifest(sourceDir);
       const newVersion = manifest.metadata?.version ?? '0.0.0';
-      const cursorMcpPath = getCursorMcpPath(global, cwd);
-      await applyMcpKeyRenamesForMarketplace(name, entry, cursorMcpPath);
+
+      if (!global) {
+        const cursorMcpPath = getCursorMcpPath(global, cwd);
+        await applyMcpKeyRenamesForMarketplace(name, entry, cursorMcpPath);
+      }
 
       if (newVersion !== entry.version) {
         console.log(`Updating marketplace ${name} (${entry.version} -> ${newVersion})...`);
-        const storeRoot = getMarketplaceStorePath(name);
+
         for (const pluginName of entry.pluginNames ?? []) {
-          if (entry.pluginHooks?.[pluginName]?.length) {
-            await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
-          }
+          await uninstallPluginFromCursor({
+            marketplaceName: name,
+            pluginName,
+            global,
+            cwd,
+            pluginHooks: entry.pluginHooks?.[pluginName],
+          });
         }
-        for (const pluginName of entry.pluginNames ?? []) {
-          const pluginStorePath = getPluginStorePath(name, pluginName);
-          await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
+
+        if (!global) {
+          const storeRoot = getMarketplaceStorePath(name);
+          await rm(storeRoot, { recursive: true, force: true }).catch(() => {});
         }
-        await removeSymlinksInDirPointingUnder(cursorAgentsDir, storeRoot);
-        await removeSymlinksInDirPointingUnder(cursorCommandsDir, storeRoot);
-        await removeSymlinksInDirPointingUnder(cursorSkillsDir, storeRoot);
-        await removeSymlinksInDirPointingUnder(cursorRulesDir, storeRoot);
-        await rm(storeRoot, { recursive: true, force: true }).catch(() => {});
 
         const manifestPluginNames = new Set(manifest.plugins.map((p) => p.name));
         const previousPlugins = (entry.pluginNames ?? []).filter((n) => manifestPluginNames.has(n));
@@ -102,7 +103,6 @@ export async function runUpdate(): Promise<void> {
         updated++;
       } else {
         if (!entry.pluginVersions) {
-          // Backfill from source so future updates can do per-plugin version diff
           entry.pluginVersions = {};
           for (const pluginName of entry.pluginNames ?? []) {
             const plugin = manifest.plugins.find((p) => p.name === pluginName);
@@ -118,16 +118,13 @@ export async function runUpdate(): Promise<void> {
         for (const pluginName of [...(entry.pluginNames ?? [])]) {
           if (manifestPluginNames.has(pluginName)) continue;
 
-          const pluginStorePath = getPluginStorePath(name, pluginName);
-          if (entry.pluginHooks?.[pluginName]?.length) {
-            await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
-          }
-          await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
-          await removeSymlinksInDirPointingUnder(cursorAgentsDir, pluginStorePath);
-          await removeSymlinksInDirPointingUnder(cursorCommandsDir, pluginStorePath);
-          await removeSymlinksInDirPointingUnder(cursorSkillsDir, pluginStorePath);
-          await removeSymlinksInDirPointingUnder(cursorRulesDir, pluginStorePath);
-          await rm(pluginStorePath, { recursive: true, force: true }).catch(() => {});
+          await uninstallPluginFromCursor({
+            marketplaceName: name,
+            pluginName,
+            global,
+            cwd,
+            pluginHooks: entry.pluginHooks?.[pluginName],
+          });
 
           entry.pluginNames = entry.pluginNames!.filter((n) => n !== pluginName);
           if (entry.pluginHooks) delete entry.pluginHooks[pluginName];
@@ -152,22 +149,23 @@ export async function runUpdate(): Promise<void> {
           const curVer = entry.pluginVersions?.[pluginName];
           if (newVer === curVer) continue;
 
-          const pluginStorePath = getPluginStorePath(name, pluginName);
-          if (entry.pluginHooks?.[pluginName]?.length) {
-            await removeHookEntries(entry.pluginHooks[pluginName], global, cwd);
-          }
-          await removeCopiedAgentsForPlugin(pluginStorePath, cursorAgentsDir);
-          await removeSymlinksInDirPointingUnder(cursorAgentsDir, pluginStorePath);
-          await removeSymlinksInDirPointingUnder(cursorCommandsDir, pluginStorePath);
-          await removeSymlinksInDirPointingUnder(cursorSkillsDir, pluginStorePath);
-          await removeSymlinksInDirPointingUnder(cursorRulesDir, pluginStorePath);
-          await rm(pluginStorePath, { recursive: true, force: true }).catch(() => {});
-
-          const { installed, pluginHooks, pluginMcpKeys: pluginMcpKeysReturned } = await installMarketplaceFromDir(manifest, sourceDir, {
-            pluginNames: [pluginName],
+          await uninstallPluginFromCursor({
+            marketplaceName: name,
+            pluginName,
             global,
-            isUpdate: true,
+            cwd,
+            pluginHooks: entry.pluginHooks?.[pluginName],
           });
+
+          const { installed, pluginHooks, pluginMcpKeys: pluginMcpKeysReturned } = await installMarketplaceFromDir(
+            manifest,
+            sourceDir,
+            {
+              pluginNames: [pluginName],
+              global,
+              isUpdate: true,
+            }
+          );
           if (installed.includes(pluginName)) {
             const plugin = manifest.plugins.find((p) => p.name === pluginName);
             const ver = plugin ? await getPluginVersionFromSource(plugin, sourceDir) : '0.0.0';
