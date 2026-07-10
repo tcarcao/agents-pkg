@@ -1,76 +1,82 @@
 /**
  * Resolve a source (GitHub owner/repo, git URL, or local path) to a local directory path.
  * For remote sources, clones to a temp directory; caller must call cleanup() when done.
+ *
+ * Parsing of `source` (local vs. git, ref extraction) lives in `source-parser.ts`; this
+ * module only does filesystem/network work (stat a local path, or clone a git remote).
  */
 
-import { resolve } from 'path';
 import { mkdtemp, rm, stat } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { spawnSync } from 'child_process';
-
-function isLocalPath(input: string): boolean {
-  const t = input.trim();
-  return (
-    t.startsWith('./') ||
-    t.startsWith('../') ||
-    t === '.' ||
-    t === '..' ||
-    t.startsWith('/') ||
-    /^[a-zA-Z]:[/\\]/.test(t)
-  );
-}
-
-/**
- * SSH-style URL without git@ prefix: host:path (e.g. git.naspersclassifieds.com:olxeu/ecosystem/tooling/ai-engineering-kit.git).
- * Single colon, host-like left part, path-like right part.
- */
-function isSshStyleUrl(input: string): boolean {
-  const colonIdx = input.indexOf(':');
-  if (colonIdx <= 0 || colonIdx !== input.lastIndexOf(':')) return false;
-  const host = input.slice(0, colonIdx);
-  const path = input.slice(colonIdx + 1);
-  const hostLooksValid = host.includes('.') || host === 'github' || host === 'gitlab';
-  const pathLooksValid = path.length > 0 && (path.includes('/') || path.endsWith('.git'));
-  return hostLooksValid && pathLooksValid;
-}
-
-function isGitUrl(input: string): boolean {
-  const t = input.trim();
-  return (
-    t.startsWith('http://') ||
-    t.startsWith('https://') ||
-    t.startsWith('git@') ||
-    isSshStyleUrl(t)
-  );
-}
-
-/**
- * Convert shorthand to HTTPS clone URL.
- * owner/repo -> https://github.com/owner/repo.git
- * gitlab.com/owner/repo -> https://gitlab.com/owner/repo.git
- * Other hosts require a full git URL.
- */
-function ownerRepoToUrl(ownerRepo: string): string {
-  const trimmed = ownerRepo.trim();
-  if (trimmed.includes(':')) return '';
-  const parts = trimmed.split('/').filter(Boolean);
-  if (parts.length === 2) {
-    const [owner, repo] = parts;
-    if (owner!.includes('.')) return '';
-    return `https://github.com/${owner}/${(repo ?? '').replace(/\.git$/, '')}.git`;
-  }
-  if (parts.length === 3 && (parts[0] === 'github.com' || parts[0] === 'gitlab.com')) {
-    const [host, owner, repo] = parts;
-    return `https://${host}/${owner}/${(repo ?? '').replace(/\.git$/, '')}.git`;
-  }
-  return '';
-}
+import { parseSource } from './source-parser.js';
 
 export interface ResolveSourceToDirResult {
   path: string;
   /** Call when done to remove temp dir (only set when we cloned). */
   cleanup?: () => Promise<void>;
+}
+
+const DEFAULT_CLONE_TIMEOUT_MS = 300_000;
+
+function getCloneTimeoutMs(): number {
+  const raw = process.env.AGENTS_PKG_CLONE_TIMEOUT_MS;
+  if (!raw) return DEFAULT_CLONE_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CLONE_TIMEOUT_MS;
+}
+
+/**
+ * Clone `url` (optionally at `ref`) into a fresh temp directory and return its path.
+ * Caller owns the returned directory and should remove it when done.
+ */
+export async function cloneRepo(url: string, ref?: string): Promise<string> {
+  const tempDir = await mkdtemp(join(tmpdir(), 'agents-pkg-'));
+  const cloneArgs = [
+    // Never smudge git-lfs content on checkout: avoids hard failures when git-lfs isn't installed.
+    '-c',
+    'filter.lfs.required=false',
+    '-c',
+    'filter.lfs.smudge=',
+    '-c',
+    'filter.lfs.clean=',
+    '-c',
+    'filter.lfs.process=',
+    'clone',
+    '--depth',
+    '1',
+    ...(ref ? ['--branch', ref] : []),
+    url,
+    tempDir,
+  ];
+
+  const result = spawnSync('git', cloneArgs, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    encoding: 'utf-8',
+    timeout: getCloneTimeoutMs(),
+    env: {
+      ...process.env,
+      // Never hang on an auth prompt; fail fast instead.
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_LFS_SKIP_SMUDGE: '1',
+    },
+  });
+
+  const target = ref ? `${url} (ref: ${ref})` : url;
+
+  if (result.error && (result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    throw new Error(`Timed out cloning ${target} after ${getCloneTimeoutMs()}ms`);
+  }
+
+  if (result.status !== 0) {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    const stderr = (result.stderr || '').trim();
+    throw new Error(`Failed to clone ${target}: ${stderr || result.error?.message || 'unknown error'}`);
+  }
+
+  return tempDir;
 }
 
 /**
@@ -83,9 +89,10 @@ export async function resolveSourceToDir(source: string): Promise<ResolveSourceT
     throw new Error('Source is required');
   }
 
-  // Local path
-  if (isLocalPath(trimmed)) {
-    const abs = resolve(trimmed);
+  const parsed = parseSource(trimmed);
+
+  if (parsed.type === 'local') {
+    const abs = parsed.localPath ?? parsed.url;
     try {
       const st = await stat(abs);
       if (!st.isDirectory()) {
@@ -98,33 +105,11 @@ export async function resolveSourceToDir(source: string): Promise<ResolveSourceT
     return { path: abs };
   }
 
-  // Remote: git URL or owner/repo
-  let cloneUrl: string;
-  if (isGitUrl(trimmed)) {
-    cloneUrl = trimmed;
-  } else {
-    cloneUrl = ownerRepoToUrl(trimmed);
-    if (!cloneUrl) {
-      throw new Error(`Invalid source: ${trimmed}. Use a local path, owner/repo, or a git URL.`);
-    }
-  }
-
-  const tempDir = await mkdtemp(join(tmpdir(), 'agents-pkg-'));
-  const result = spawnSync('git', ['clone', '--depth', '1', cloneUrl, tempDir], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    encoding: 'utf-8',
-  });
-
-  if (result.status !== 0) {
-    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    const stderr = (result.stderr || '').trim();
-    throw new Error(`Failed to clone ${cloneUrl}: ${stderr || result.error?.message || 'unknown error'}`);
-  }
-
+  const path = await cloneRepo(parsed.url, parsed.ref);
   return {
-    path: tempDir,
+    path,
     cleanup: async () => {
-      await rm(tempDir, { recursive: true, force: true });
+      await rm(path, { recursive: true, force: true });
     },
   };
 }

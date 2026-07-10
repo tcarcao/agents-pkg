@@ -57,7 +57,8 @@ src/
     ├── marketplace.ts     # readMarketplaceManifest, getMarketplaceStorePath, getPluginStorePath, readPluginVersion, getPluginVersionFromSource
     ├── agents-copy.ts     # copyAgentsFromPluginStore, removeCopiedAgentsForPlugin (agents copied so Cursor sees subagents)
     ├── symlink.ts         # createSymlink, removeSymlinksInDirPointingUnder
-    ├── source-dir.ts      # resolveSourceToDir (clone or resolve path; local + GitLab + GitHub)
+    ├── source-parser.ts   # parseSource (pure): local vs. github/gitlab/git; guarded `#ref` (+ `github:`/`gitlab:` prefixes, `tree/<ref>` browse URLs)
+    ├── source-dir.ts      # resolveSourceToDir (stat local dir, or cloneRepo via parseSource's url/ref; file://, LFS-safe, GIT_TERMINAL_PROMPT=0, AGENTS_PKG_CLONE_TIMEOUT_MS)
     ├── lock.ts            # readLock, writeLock, getLockPath, getHome
     ├── paths.ts           # getCursorAgentsDir, getCursorCommandsDir, getCursorSkillsDir, getCursorRulesDir, getCursorHooksPath, getCursorMcpPath
     ├── hooks.ts           # mergeHooksInto, removeHookEntries (merge/remove hooks; scope project or global)
@@ -90,7 +91,7 @@ src/
 | del-plugin | `src/del-plugin.ts`: removeHookEntries for plugin, removeCopiedAgentsForPlugin, remove plugin symlinks and store; update lock (pluginNames, pluginHooks, pluginMcpKeys); **does not modify** `.cursor/mcp.json` |
 | del-marketplace | `src/del-marketplace.ts`: removeHookEntries per plugin, removeCopiedAgentsForPlugin per plugin, removeSymlinksInDirPointingUnder for agents/commands/skills/rules; rm store; update lock; **does not modify** `.cursor/mcp.json` |
 | update | `src/update.ts`: rename legacy MCP keys in mcp.json when possible; for each lock.marketplaces, resolve source, read manifest. If **marketplace version** changed → full teardown and reinstall all with `isUpdate` (MCP: update-in-place only). If **unchanged** → remove plugins no longer in manifest; reinstall only plugins whose **plugin version** changed with `isUpdate`. Write lock when any change. |
-| Source resolution | `lib/source-dir.ts`: resolveSourceToDir (local path, git URL, owner/repo, gitlab.com/owner/repo) |
+| Source resolution | `lib/source-parser.ts`: `parseSource` (pure) resolves local paths; bare `owner/repo`/`github.com\|gitlab.com/owner/repo` shorthand; `github:`/`gitlab:` prefixes; `tree/<ref>` (GitHub) and `-/tree/<ref>` (GitLab) browse URLs (subpath dropped); a guarded `#<ref>` fragment (only parsed when the base looks git-like, URL-decoded, `@skillFilter` suffix ignored). `lib/source-dir.ts`: `resolveSourceToDir` calls `parseSource` then either stats the local dir or `cloneRepo`s the resolved url/ref (`file://` supported; git-LFS smudge disabled; `GIT_TERMINAL_PROMPT=0`; timeout via `AGENTS_PKG_CLONE_TIMEOUT_MS`) |
 
 ## Development
 
